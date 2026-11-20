@@ -1,6 +1,22 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { api } from './api';
-import type { ApiResult, AppState, Diag, FxKind, Group, Light, Preset, Schedule, SectionKey, Settings } from './types';
+import { subscribeLights } from './events';
+import type {
+  ApiResult,
+  AppState,
+  Diag,
+  Favorite,
+  FxKind,
+  Group,
+  Light,
+  Preset,
+  Room,
+  Scene,
+  Schedule,
+  SectionKey,
+  Settings,
+  Sun,
+} from './types';
 
 type Body = Record<string, unknown>;
 
@@ -19,10 +35,15 @@ export interface AppCtx {
   lights: Light[];
   groups: Group[];
   schedules: Schedule[];
+  rooms: Room[];
+  scenes: Scene[];
+  favorites: Favorite[];
+  sun: Sun | null;
   settings: Settings;
   version?: string;
   diag?: Diag;
   loaded: boolean;
+  live: boolean;
   connError: string | null;
   noLights: boolean;
   isOpen(id: string): boolean;
@@ -34,6 +55,12 @@ export interface AppCtx {
   startEffect(target: string, macs: string[], kind: FxKind): void;
   stopEffect(target: string, macs: string[]): void;
   applyPreset(g: Group, p: Preset): void;
+  powerRoom(room: Room, on: boolean): void;
+  recallScene(scene: Scene): void;
+  captureScene(name: string): void;
+  updateRooms(rooms: Room[]): void;
+  updateScenes(scenes: Scene[]): void;
+  updateFavorites(favorites: Favorite[]): void;
   updateGroups(fn: (gs: Group[]) => Group[]): void;
   updateSchedules(fn: (ss: Schedule[]) => Schedule[]): void;
   saveOrder(key: SectionKey, ids: string[]): void;
@@ -73,10 +100,21 @@ const DEFAULT_SETTINGS: Settings = {
 const mobileQuery = matchMedia('(max-width:700px), (pointer:coarse)');
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [data, setData] = useState<AppState>({ lights: [], groups: [], schedules: [], settings: DEFAULT_SETTINGS });
+  const [data, setData] = useState<AppState>({
+    lights: [],
+    groups: [],
+    schedules: [],
+    rooms: [],
+    scenes: [],
+    favorites: [],
+    sun: null,
+    settings: DEFAULT_SETTINGS,
+  });
   const dataRef = useRef(data);
   dataRef.current = data;
   const [loaded, setLoaded] = useState(false);
+  const [live, setLive] = useState(false);
+  const liveRef = useRef(false);
   const [connError, setConnError] = useState<string | null>(null);
   const [noLights, setNoLights] = useState(false);
   const [cardOpen, setCardOpen] = useState<Record<string, boolean>>({});
@@ -122,6 +160,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       lights: keepEdits ? d.lights : s.lights ?? [],
       groups: keepSaved ? d.groups : s.groups ?? [],
       schedules: keepSaved ? d.schedules : s.schedules ?? [],
+      rooms: keepSaved ? d.rooms : s.rooms ?? [],
+      scenes: keepSaved ? d.scenes : s.scenes ?? [],
+      favorites: keepSaved ? d.favorites : s.favorites ?? [],
+      sun: s.sun ?? null,
       settings: keepSaved && s.settings ? { ...s.settings, light_order: d.settings.light_order } : s.settings ?? d.settings,
       version: s.version,
       diag: s.diag,
@@ -130,7 +172,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     void refresh();
-    const t = window.setInterval(() => void refresh(), 2000);
+    let tick = 0;
+    // Light state arrives over the live stream; the full state poll then runs about every 14 s instead of every 2 s.
+    const t = window.setInterval(() => {
+      tick += 1;
+      if (!liveRef.current || tick % 7 === 0) void refresh();
+    }, 2000);
     const onVisible = () => {
       if (!document.hidden) void refresh();
     };
@@ -143,6 +190,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
       window.removeEventListener('online', onOnline);
     };
   }, []);
+
+  useEffect(
+    () =>
+      subscribeLights(
+        (lights) => {
+          fails.current = 0;
+          setConnError(null);
+          if (Date.now() - lastEdit.current < 1500) return;
+          setData((d) => ({ ...d, lights }));
+        },
+        (on) => {
+          liveRef.current = on;
+          setLive(on);
+        },
+      ),
+    [],
+  );
 
   // Sends for the same key within 90 ms are merged into one request
   function queue(key: string, path: string, body: Body, now = false) {
@@ -231,6 +295,55 @@ export function AppProvider({ children }: { children: ReactNode }) {
     void api('groups', 'PUT', { groups });
   }
 
+  function powerRoom(room: Room, on: boolean) {
+    markEdit();
+    updateLights((l) => room.lights.includes(l.mac), { on });
+    void api('room/' + room.id, 'POST', { power: on });
+  }
+
+  function recallScene(scene: Scene) {
+    markEdit();
+    setData((d) => ({
+      ...d,
+      lights: d.lights.map((l) => {
+        const c = scene.lights[l.mac];
+        return c ? { ...l, on: c.on, h: c.h, s: c.s, b: c.b, k: c.k } : l;
+      }),
+    }));
+    void api('scene/' + scene.id + '/apply', 'POST');
+  }
+
+  function captureScene(name: string) {
+    const lights = Object.fromEntries(
+      dataRef.current.lights
+        .filter((l) => l.online)
+        .map((l) => [l.mac, { on: l.on, h: l.h, s: l.s, b: l.b, k: l.k }]),
+    );
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    updateScenes([...dataRef.current.scenes, { id, name, lights }]);
+  }
+
+  function updateRooms(rooms: Room[]) {
+    dataRef.current = { ...dataRef.current, rooms };
+    markSave();
+    setData((d) => ({ ...d, rooms }));
+    void api('rooms', 'PUT', { rooms });
+  }
+
+  function updateScenes(scenes: Scene[]) {
+    dataRef.current = { ...dataRef.current, scenes };
+    markSave();
+    setData((d) => ({ ...d, scenes }));
+    void api('scenes', 'PUT', { scenes });
+  }
+
+  function updateFavorites(favorites: Favorite[]) {
+    dataRef.current = { ...dataRef.current, favorites };
+    markSave();
+    setData((d) => ({ ...d, favorites }));
+    void api('favorites', 'PUT', { favorites });
+  }
+
   function updateSchedules(fn: (ss: Schedule[]) => Schedule[]) {
     const schedules = fn(dataRef.current.schedules);
     dataRef.current = { ...dataRef.current, schedules };
@@ -295,10 +408,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     lights,
     groups: data.groups,
     schedules: data.schedules,
+    rooms: data.rooms,
+    scenes: data.scenes,
+    favorites: data.favorites,
+    sun: data.sun,
     settings: data.settings,
     version: data.version,
     diag: data.diag,
     loaded,
+    live,
     connError,
     noLights,
     isOpen,
@@ -310,6 +428,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     startEffect,
     stopEffect,
     applyPreset,
+    powerRoom,
+    recallScene,
+    captureScene,
+    updateRooms,
+    updateScenes,
+    updateFavorites,
     updateGroups,
     updateSchedules,
     saveOrder,

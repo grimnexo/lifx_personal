@@ -55,6 +55,28 @@ export interface Action {
   color?: Color;
 }
 
+export interface Room {
+  id: string;
+  name: string;
+  lights: string[];
+}
+
+export interface Scene {
+  id: string;
+  name: string;
+  lights: Record<string, Omit<LightSnap, 'label'>>;
+}
+
+export interface Favorite {
+  type: 'light' | 'group' | 'room' | 'scene';
+  id: string;
+}
+
+export interface Sun {
+  sunrise: string | null;
+  sunset: string | null;
+}
+
 export interface Schedule {
   id: string;
   name: string;
@@ -87,6 +109,10 @@ export interface AppState {
   lights: Light[];
   groups: Group[];
   schedules: Schedule[];
+  rooms: Room[];
+  scenes: Scene[];
+  favorites: Favorite[];
+  sun: Sun | null;
   settings: Settings;
   version?: string;
   diag?: Diag;

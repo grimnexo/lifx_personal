@@ -19,13 +19,16 @@ if not os.path.exists(DATA) and os.path.exists(_OLD):
     except OSError:
         pass
 
-db = {'settings': {'broadcast': '255.255.255.255', 'ips': [], 'poll': 3, 'transition': 0.5, 'scan': [], 'lat': None, 'lon': None, 'light_order': []}, 'groups': [], 'schedules': [], 'users': []}
+db = {'settings': {'broadcast': '255.255.255.255', 'ips': [], 'poll': 3, 'transition': 0.5, 'scan': [], 'lat': None, 'lon': None, 'light_order': []}, 'groups': [], 'schedules': [], 'users': [], 'rooms': [], 'scenes': [], 'favorites': []}
 try:
     with open(DATA) as f:
         _loaded = json.load(f)
     db['groups'] = _loaded.get('groups', [])
     db['schedules'] = _loaded.get('schedules', [])
     db['users'] = _loaded.get('users', [])
+    db['rooms'] = _loaded.get('rooms', [])
+    db['scenes'] = _loaded.get('scenes', [])
+    db['favorites'] = _loaded.get('favorites', [])
     db['settings'].update(_loaded.get('settings', {}))
 except Exception:
     pass
@@ -41,6 +44,40 @@ sock.bind(('', 0))
 def save():
     with open(DATA, 'w') as f:
         json.dump(db, f, indent=2)
+
+
+def num(v, default=0.0):
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return default
+
+
+def clean_rooms(lst):
+    out, taken = [], set()
+    for r in lst if isinstance(lst, list) else []:
+        if not isinstance(r, dict) or not str(r.get('id', '')).strip():
+            continue
+        macs = [m for m in r.get('lights', []) if isinstance(m, str) and m not in taken]
+        taken.update(macs)
+        out.append({'id': str(r['id']), 'name': str(r.get('name', '')).strip()[:40] or 'Room', 'lights': macs})
+    return out
+
+
+def clean_scenes(lst):
+    out = []
+    for s in lst if isinstance(lst, list) else []:
+        if not isinstance(s, dict) or not str(s.get('id', '')).strip() or not isinstance(s.get('lights'), dict):
+            continue
+        lights = {m: {'on': bool(c.get('on')), 'h': num(c.get('h')), 's': num(c.get('s')), 'b': num(c.get('b')), 'k': num(c.get('k'), 3500)}
+                  for m, c in s['lights'].items() if isinstance(c, dict)}
+        out.append({'id': str(s['id']), 'name': str(s.get('name', '')).strip()[:40] or 'Scene', 'lights': lights})
+    return out
+
+
+def clean_favorites(lst):
+    return [{'type': f['type'], 'id': str(f['id'])} for f in (lst if isinstance(lst, list) else [])
+            if isinstance(f, dict) and f.get('type') in ('light', 'group', 'room', 'scene') and f.get('id')]
 
 
 PBKDF2_ROUNDS = 200_000
@@ -431,9 +468,46 @@ def schedule_loop():
         time.sleep(15)
 
 
+def sun_today():
+    s = db['settings']
+    if s.get('lat') is None or s.get('lon') is None:
+        return None
+    day = dt.datetime.now().astimezone().date()
+    out = {}
+    for key, rise in (('sunrise', True), ('sunset', False)):
+        t = sun_event(day, s['lat'], s['lon'], rise)
+        out[key] = t.strftime('%H:%M') if t else None
+    return out
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
+
+    def stream_events(self):
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/event-stream')
+        self.send_header('Cache-Control', 'no-cache')
+        self.send_header('Connection', 'close')
+        self.end_headers()
+        last, idle = None, 0
+        try:
+            while True:
+                with lock:
+                    snap = json.dumps([view(d) for d in devices.values()])
+                if snap != last:
+                    last, idle = snap, 0
+                    self.wfile.write(b'data: ' + snap.encode() + b'\n\n')
+                else:
+                    idle += 1
+                    if idle >= 15:
+                        idle = 0
+                        self.wfile.write(b': keep-alive\n\n')
+                self.wfile.flush()
+                time.sleep(1)
+        except OSError:
+            pass
+        self.close_connection = True
 
     def send_json(self, obj, code=200, headers=()):
         data = json.dumps(obj).encode()
@@ -579,12 +653,15 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({'ok': False, 'error': 'Not signed in'}, 401)
         if path == '/api/account' and method == 'PUT':
             return self.update_account(user, b)
+        if path == '/api/events' and method == 'GET':
+            return self.stream_events()
         if path == '/api/state':
             with lock:
                 lights = [view(d) for d in devices.values()]
             return self.send_json({'lights': lights, 'groups': db['groups'], 'settings': db['settings'],
                                    'schedules': [dict(s, next=next_fire(s)) for s in db['schedules']],
-                                   'version': VERSION,
+                                   'rooms': db['rooms'], 'scenes': db['scenes'], 'favorites': db['favorites'],
+                                   'sun': sun_today(), 'version': VERSION,
                                    'diag': {'local_ip': local_ip(db['settings']['broadcast']), 'replies': stats['replies']}})
         if len(parts) == 4 and parts[1] == 'light' and parts[3] == 'label':
             label = str(b.get('label', '')).strip().encode()[:32].decode('utf8', 'ignore')
@@ -637,6 +714,28 @@ class Handler(BaseHTTPRequestHandler):
                 o = old.get(s['id'], {})  # counters belong to the server; a stale page can't overwrite them
                 s['runs'] = o.get('runs', 0)
                 s['manual_runs'] = o.get('manual_runs', 0)
+            save()
+            return self.send_json({'ok': True})
+        if len(parts) == 3 and parts[1] == 'room':
+            room = next((r for r in db['rooms'] if r['id'] == parts[2]), None)
+            if room and 'power' in b:
+                apply(room['lights'], {'power': bool(b['power'])})
+            return self.send_json({'ok': bool(room)}, 200 if room else 404)
+        if len(parts) == 4 and parts[1] == 'scene' and parts[3] == 'apply':
+            sc = next((s for s in db['scenes'] if s['id'] == parts[2]), None)
+            for mac, c in (sc['lights'].items() if sc else []):
+                apply([mac], {'h': c['h'], 's': c['s'], 'b': c['b'], 'k': c['k'], 'power': c['on']})
+            return self.send_json({'ok': bool(sc)}, 200 if sc else 404)
+        if path == '/api/rooms' and method == 'PUT':
+            db['rooms'] = clean_rooms(b.get('rooms'))
+            save()
+            return self.send_json({'ok': True})
+        if path == '/api/scenes' and method == 'PUT':
+            db['scenes'] = clean_scenes(b.get('scenes'))
+            save()
+            return self.send_json({'ok': True})
+        if path == '/api/favorites' and method == 'PUT':
+            db['favorites'] = clean_favorites(b.get('favorites'))
             save()
             return self.send_json({'ok': True})
         if path == '/api/groups' and method == 'PUT':

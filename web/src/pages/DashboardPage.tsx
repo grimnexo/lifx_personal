@@ -8,7 +8,9 @@ import { MiniCard } from '../components/MiniCard';
 import { ScheduleCard } from '../components/ScheduleCard';
 import { ScheduleDialog } from '../components/ScheduleDialog';
 import { ConfirmDialog } from '../components/ConfirmDialog';
-import { Alert, PageTitle, Sortable, btnPrimary, btnSmall, card, grid, lnk } from '../components/ui';
+import { FavoritesBar } from '../components/FavoritesBar';
+import { RoomsDialog } from '../components/RoomsDialog';
+import { Alert, Badge, PageTitle, Sortable, btnPrimary, btnSmall, card, grid, lnk } from '../components/ui';
 import { whenText } from '../schedule-text';
 import type { SectionKey } from '../types';
 
@@ -22,7 +24,23 @@ function readOpen(k: SectionKey): boolean {
 }
 
 export function DashboardPage() {
-  const { lights, groups, schedules, connError, noLights, powerAll, openSchedule, saveOrder } = useApp();
+  const {
+    lights,
+    groups,
+    schedules,
+    rooms,
+    sun,
+    settings,
+    live,
+    connError,
+    noLights,
+    powerAll,
+    powerRoom,
+    openSchedule,
+    saveOrder,
+    refresh,
+  } = useApp();
+  const [roomsOpen, setRoomsOpen] = useState(false);
   const [open, setOpen] = useState<Record<SectionKey, boolean>>(() => ({
     groups: readOpen('groups'),
     lights: readOpen('lights'),
@@ -45,11 +63,19 @@ export function DashboardPage() {
   };
 
   const onCount = lights.filter((l) => l.on && l.online).length;
-  const subtitle = lights.length
+  const countText = lights.length
     ? `${onCount} of ${lights.length} on`
     : connError
       ? 'Not connected'
       : 'Looking for lights\u2026';
+  const sunText =
+    sun?.sunrise && sun?.sunset
+      ? `Sunrise ${sun.sunrise} \u00b7 Sunset ${sun.sunset}`
+      : settings.lat == null
+        ? 'Set a location in Settings for sunrise and sunset'
+        : '';
+  const subtitle = [countText, sunText].filter(Boolean).join(' \u00b7 ');
+  const offline = lights.filter((l) => !l.online);
 
   const alertKey = connError ? 'conn' : noLights ? 'empty' : '';
   const showAlert = !!alertKey && dismissed !== alertKey;
@@ -62,6 +88,7 @@ export function DashboardPage() {
   return (
     <>
       <PageTitle title="Lights" subtitle={subtitle}>
+        <Badge tone={live ? 'ok' : 'warn'}>{live ? 'Live' : 'Reconnecting'}</Badge>
         <button className={btnPrimary} onClick={() => powerAll(true)}>
           Turn all on
         </button>
@@ -77,17 +104,83 @@ export function DashboardPage() {
             title={connError ? 'Not connected to the lights server' : 'No lights found yet'}
             onDismiss={() => setDismissed(alertKey)}
           >
-            {connError ??
-              'Check Settings \u203a Network: the broadcast address, a scan range, or add a light\u2019s IP. Make sure this server is on the same network as the lights.'}
+            {connError ? (
+              <>
+                {connError}{' '}
+                <button type="button" className={`${lnk} underline`} onClick={() => void refresh()}>
+                  Try again
+                </button>
+              </>
+            ) : (
+              'Check Settings \u203a Network: the broadcast address, a scan range, or add a light\u2019s IP. Make sure this server is on the same network as the lights.'
+            )}
           </Alert>
         </div>
       )}
 
-      <div className="mt-6 grid grid-cols-3 gap-3">
+      {!connError && offline.length > 0 && (
+        <div className="mt-5">
+          <Alert tone="danger" title={`${plural(offline.length)} not responding`}>
+            {offline.slice(0, 3).map((l) => l.label).join(', ')}
+            {offline.length > 3 ? ` and ${offline.length - 3} more` : ''}. Check that they have power and are on this network.{' '}
+            <button type="button" className={`${lnk} underline`} onClick={() => void refresh()}>
+              Check again
+            </button>
+          </Alert>
+        </div>
+      )}
+
+      <FavoritesBar />
+
+      <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat label="Lights" value={lights.length} />
+        <Stat label="Rooms" value={rooms.length} />
         <Stat label="Groups" value={visibleGroups.length} />
         <Stat label="Schedules" value={schedules.length} />
       </div>
+
+      <section aria-labelledby="rooms-head" className="mt-8">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <h2 id="rooms-head" className="m-0 text-[1.05rem] font-semibold">
+            Rooms
+          </h2>
+          <button type="button" className={`${btnSmall} ml-auto`} onClick={() => setRoomsOpen(true)}>
+            Manage rooms
+          </button>
+        </div>
+        {rooms.length === 0 ? (
+          <p className="text-mut">No rooms yet. Create rooms to turn a whole area on or off at once.</p>
+        ) : (
+          <div className={grid}>
+            {rooms.map((r) => {
+              const members = lights.filter((l) => r.lights.includes(l.mac));
+              const litCount = members.filter((l) => l.on && l.online).length;
+              return (
+                <div key={r.id} className={card}>
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="m-0 min-w-0 truncate text-[1.05rem] font-semibold">{r.name}</h3>
+                    <Badge tone={litCount ? 'ok' : 'off'}>{`${litCount} of ${members.length} on`}</Badge>
+                  </div>
+                  <p className="m-0 truncate text-[.85rem] text-mut">
+                    {members.length ? members.map((l) => l.label).join(', ') : 'No lights assigned'}
+                  </p>
+                  <div>
+                    <button
+                      type="button"
+                      className={btnSmall}
+                      disabled={members.length === 0}
+                      onClick={() => powerRoom(r, litCount === 0)}
+                    >
+                      {litCount === 0 ? 'Turn on' : 'Turn off'}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <RoomsDialog open={roomsOpen} onClose={() => setRoomsOpen(false)} />
+      </section>
 
       <SectionHead
         k="lights"
