@@ -1,13 +1,33 @@
 import { useEffect, useState } from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth';
+import { ConfirmDialog } from './ConfirmDialog';
 import { Modal } from './ui';
 import { ScenesMenu } from './ScenesMenu';
+import { ScheduleDialog } from './ScheduleDialog';
 import { UserMenu } from './UserMenu';
 
-const links = [
-  { to: '/', label: 'Lights', end: true },
+const sections = [
+  { to: '/', label: 'Dashboard', end: true },
+  { to: '/lights', label: 'Lights', end: false },
+  { to: '/rooms', label: 'Rooms', end: false },
+  { to: '/groups', label: 'Groups', end: false },
+  { to: '/schedules', label: 'Schedules', end: false },
   { to: '/devices', label: 'Devices', end: false },
+];
+
+const mobileTabs = [
+  { to: '/', label: 'Dashboard', end: true },
+  { to: '/lights', label: 'Lights', end: false },
+  { to: '/rooms', label: 'Rooms', end: false },
+  { to: '/schedules', label: 'Schedules', end: false },
+];
+
+const moreLinks = [
+  { to: '/groups', label: 'Groups' },
+  { to: '/devices', label: 'Devices' },
+  { to: '/profile', label: 'Profile' },
+  { to: '/settings', label: 'Settings' },
 ];
 
 const tabClass = ({ isActive }: { isActive: boolean }) =>
@@ -17,9 +37,12 @@ const tabClass = ({ isActive }: { isActive: boolean }) =>
 
 export function AppShell() {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const { user } = useAuth();
   const [helpOpen, setHelpOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const sidebar = user?.layout === 'side';
+  const moreActive = moreLinks.some((l) => pathname === l.to || pathname.startsWith(l.to + '/'));
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -28,7 +51,11 @@ export function AppShell() {
       if (t instanceof HTMLElement && t.closest('input, textarea, select, [contenteditable="true"]')) return;
       if (document.querySelector('dialog[open]')) return;
       if (e.key === '?') setHelpOpen(true);
-      else if (e.key === 'l') navigate('/');
+      else if (e.key === 'h') navigate('/');
+      else if (e.key === 'l') navigate('/lights');
+      else if (e.key === 'r') navigate('/rooms');
+      else if (e.key === 'g') navigate('/groups');
+      else if (e.key === 'c') navigate('/schedules');
       else if (e.key === 'd') navigate('/devices');
       else if (e.key === 'p') navigate('/profile');
       else if (e.key === 's') navigate('/settings');
@@ -49,7 +76,7 @@ export function AppShell() {
             Lights
           </NavLink>
           <ul className="m-0 grid list-none gap-1 p-0">
-            {links.map((l) => (
+            {sections.map((l) => (
               <li key={l.to}>
                 <NavLink
                   to={l.to}
@@ -82,7 +109,7 @@ export function AppShell() {
             Lights
           </NavLink>
           <ul className="m-0 hidden list-none gap-1 p-0 md:flex">
-            {links.map((l) => (
+            {sections.map((l) => (
               <li key={l.to}>
                 <NavLink
                   to={l.to}
@@ -113,20 +140,44 @@ export function AppShell() {
         aria-label="Mobile"
         className="fixed inset-x-0 bottom-0 z-30 flex border-t border-line bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden"
       >
-        <NavLink to="/" end className={tabClass}>
-          Lights
-        </NavLink>
-        <NavLink to="/devices" className={tabClass}>
-          Devices
-        </NavLink>
-        <NavLink to="/profile" className={tabClass}>
-          Profile
-        </NavLink>
-        <NavLink to="/settings" className={tabClass}>
-          Settings
-        </NavLink>
+        {mobileTabs.map((l) => (
+          <NavLink key={l.to} to={l.to} end={l.end} className={tabClass}>
+            {l.label}
+          </NavLink>
+        ))}
+        <button
+          type="button"
+          onClick={() => setMoreOpen(true)}
+          aria-current={moreActive ? 'page' : undefined}
+          className={`${tabClass({ isActive: moreActive })} cursor-pointer border-0 bg-transparent`}
+        >
+          More
+        </button>
       </nav>
 
+      <Modal open={moreOpen} onClose={() => setMoreOpen(false)} labelledBy="moreTitle" className="w-[min(340px,92vw)]">
+        <h2 id="moreTitle" className="m-0 mb-3 text-xl font-semibold">
+          More
+        </h2>
+        <ul className="m-0 grid list-none gap-1 p-0">
+          {moreLinks.map((l) => (
+            <li key={l.to}>
+              <NavLink
+                to={l.to}
+                onClick={() => setMoreOpen(false)}
+                className={({ isActive }) =>
+                  `block rounded-lg px-3 py-2.5 font-medium no-underline ${isActive ? 'bg-soft text-ink' : 'text-mut'}`
+                }
+              >
+                {l.label}
+              </NavLink>
+            </li>
+          ))}
+        </ul>
+      </Modal>
+
+      <ScheduleDialog />
+      <ConfirmDialog />
       <ShortcutsDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
   );
@@ -134,7 +185,11 @@ export function AppShell() {
 
 function ShortcutsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const rows: [string, string][] = [
+    ['H', 'Dashboard'],
     ['L', 'Lights'],
+    ['R', 'Rooms'],
+    ['G', 'Groups'],
+    ['C', 'Schedules'],
     ['D', 'Devices'],
     ['P', 'Profile'],
     ['S', 'Settings'],
