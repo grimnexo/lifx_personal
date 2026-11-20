@@ -19,10 +19,11 @@ Current build: **1.0.1** (see `VERSION` at the top of `hl_lifx_control.py`). The
 | `index.html` | The original single-file UI. No longer served; kept for reference |
 | `CHANGELOG.md` | What changed in each release, and which files were updated |
 | `LICENSE` | MIT license |
-| `.gitignore` | Keeps `config.json` (your location, IPs, groups, schedules) out of git |
-| `config.json` | Created on first save: settings, groups, presets, schedules and user accounts (passwords and PINs stored as salted hashes). Safe to back up while the service is stopped; don't share it |
+| `.gitignore` | Keeps `lifx.db` and `config.json` (your location, IPs, groups, schedules, accounts) out of git |
+| `lifx.db` | SQLite database created on first start: settings, groups, rooms, scenes, favorites, schedules, user accounts (passwords and PINs stored as salted hashes) and login sessions (stored as hashes). Back it up while the service is stopped; don't share it |
+| `lifx_db.py` | Storage module used by `hl_lifx_control.py` |
 
-An older `data.json` is renamed to `config.json` automatically on startup if `config.json` doesn't exist yet.
+On first start, an existing `config.json` (or older `data.json`) is imported into `lifx.db` once. The JSON file is left in place and is no longer read after that.
 
 ## Running
 

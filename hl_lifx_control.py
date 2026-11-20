@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """hl_lifx_control: local LIFX controller. Speaks the LIFX LAN UDP protocol and serves a web UI + JSON API.
 Standard library only (Python 3.8+). See README.md."""
-import datetime as dt, hashlib, hmac, ipaddress, json, math, mimetypes, os, random, secrets, socket, struct, threading, time
+import datetime as dt, hashlib, hmac, ipaddress, json, math, mimetypes, os, random, secrets, socket, sqlite3, struct, threading, time
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from lifx_db import DATA_KEYS, LIST_KEYS, Store
 
 VERSION = '1.0.1'  # bump on every release and add an entry to CHANGELOG.md
 PORT = int(os.environ.get('PORT', 8080))
@@ -11,27 +12,32 @@ LIFX = 56700
 SRC = 0x4C494658
 HERE = os.path.dirname(os.path.abspath(__file__))
 DIST = os.path.join(HERE, 'web', 'dist')  # built by `npm run build` in web/
-DATA = os.path.join(HERE, 'config.json')
-_OLD = os.path.join(HERE, 'data.json')  # name used by earlier versions
-if not os.path.exists(DATA) and os.path.exists(_OLD):
-    try:
-        os.rename(_OLD, DATA)  # keep existing settings, groups and presets
-    except OSError:
-        pass
+DB_FILE = os.path.join(HERE, 'lifx.db')
+LEGACY_FILES = (os.path.join(HERE, 'config.json'), os.path.join(HERE, 'data.json'))  # JSON config from earlier versions
 
-db = {'settings': {'broadcast': '255.255.255.255', 'ips': [], 'poll': 3, 'transition': 0.5, 'scan': [], 'lat': None, 'lon': None, 'light_order': []}, 'groups': [], 'schedules': [], 'users': [], 'rooms': [], 'scenes': [], 'favorites': []}
-try:
-    with open(DATA) as f:
-        _loaded = json.load(f)
-    db['groups'] = _loaded.get('groups', [])
-    db['schedules'] = _loaded.get('schedules', [])
-    db['users'] = _loaded.get('users', [])
-    db['rooms'] = _loaded.get('rooms', [])
-    db['scenes'] = _loaded.get('scenes', [])
-    db['favorites'] = _loaded.get('favorites', [])
-    db['settings'].update(_loaded.get('settings', {}))
-except Exception:
-    pass
+
+def read_legacy():
+    for path in LEGACY_FILES:
+        if os.path.exists(path):
+            try:
+                with open(path) as f:
+                    return json.load(f)
+            except (OSError, ValueError) as e:
+                print(f'Could not read {os.path.basename(path)}: {e}')
+    return None
+
+
+store = Store(DB_FILE)
+if not store.has_app_data() and store.user_count() == 0:
+    legacy = read_legacy()
+    if legacy is not None:
+        store.import_legacy(legacy)
+        print(f'Imported settings and accounts into {os.path.basename(DB_FILE)}')
+
+db = {'settings': {'broadcast': '255.255.255.255', 'ips': [], 'poll': 3, 'transition': 0.5, 'scan': [], 'lat': None, 'lon': None, 'light_order': []}}
+db['settings'].update(store.get_data('settings', {}))
+for _key in LIST_KEYS:
+    db[_key] = store.get_data(_key, [])
 
 lock = threading.Lock()
 devices = {}
@@ -42,8 +48,7 @@ sock.bind(('', 0))
 
 
 def save():
-    with open(DATA, 'w') as f:
-        json.dump(db, f, indent=2)
+    store.save_data({k: db[k] for k in DATA_KEYS})
 
 
 def num(v, default=0.0):
@@ -82,7 +87,6 @@ def clean_favorites(lst):
 
 PBKDF2_ROUNDS = 200_000
 SESSION_SECONDS = 30 * 24 * 3600
-sessions = {}  # token -> (user id, expiry time); lost on restart, so users sign in again
 attempts = {}  # username -> [failed count, locked until]
 
 
@@ -112,8 +116,8 @@ def public_user(u):
             'accent': u.get('accent', 'blue'), 'hasPin': bool(u.get('pin'))}
 
 
-if not db['users']:
-    db['users'].append(new_user('test', 'Test user', 'test'))  # development account until real authentication exists
+if store.user_count() == 0:
+    store.insert_user(new_user('test', 'Test user', 'test'))  # development account until real authentication exists
 
 
 def packet(mtype, mac=None, payload=b''):
@@ -530,16 +534,11 @@ class Handler(BaseHTTPRequestHandler):
         return morsel.value if morsel else None
 
     def session_user(self):
-        token = self.session_token()
-        with lock:
-            s = sessions.get(token) if token else None
-        if not s or s[1] < time.time():
-            return None
-        return next((u for u in db['users'] if u['id'] == s[0]), None)
+        return store.session_user(self.session_token())
 
     def login(self, b):
         name = str(b.get('username', '')).strip()
-        user = next((u for u in db['users'] if u['username'] == name), None)
+        user = store.user_by_name(name)
         tries = attempts.setdefault(name, [0, 0.0])
         if tries[1] > time.time():
             return self.send_json({'ok': False, 'error': 'Too many attempts. Wait a minute and try again.'}, 429)
@@ -553,8 +552,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({'ok': False, 'error': 'Wrong username or ' + ('PIN' if use_pin else 'password')}, 401)
         attempts.pop(name, None)
         token = secrets.token_urlsafe(32)
-        with lock:
-            sessions[token] = (user['id'], time.time() + SESSION_SECONDS)
+        store.create_session(token, user['id'], time.time() + SESSION_SECONDS)
         self.send_json({'ok': True, 'user': public_user(user), 'token': token},
                        headers=[('Set-Cookie', f'lifx_session={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={SESSION_SECONDS}')])
 
@@ -562,8 +560,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/api/auth/login' and method == 'POST':
             return self.login(b)
         if path == '/api/auth/logout' and method == 'POST':
-            with lock:
-                sessions.pop(self.session_token(), None)
+            store.delete_session(self.session_token())
             return self.send_json({'ok': True}, headers=[('Set-Cookie', 'lifx_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0')])
         user = self.session_user()
         if not user:
@@ -597,9 +594,11 @@ class Handler(BaseHTTPRequestHandler):
         if pin is not None:
             user['pin'] = hash_secret(pin) if pin else None
         try:
-            save()
-        except OSError as e:
-            return self.send_json({'ok': False, 'error': f'Could not write config.json: {e}'}, 500)
+            store.update_user(user)
+        except sqlite3.Error as e:
+            return self.send_json({'ok': False, 'error': f'Could not save account: {e}'}, 500)
+        if new_pw is not None:
+            store.delete_other_sessions(user['id'], self.session_token())
         self.send_json({'ok': True, 'user': public_user(user)})
 
     def read_body(self):
@@ -769,8 +768,8 @@ class Handler(BaseHTTPRequestHandler):
                 pass
             try:
                 save()
-            except OSError as e:
-                return self.send_json({'ok': False, 'error': f'Could not write config.json: {e}'}, 500)
+            except sqlite3.Error as e:
+                return self.send_json({'ok': False, 'error': f'Could not save settings: {e}'}, 500)
             return self.send_json({'ok': True})
         self.send_json({'error': 'not found'}, 404)
 
