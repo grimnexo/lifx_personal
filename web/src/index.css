@@ -36,13 +36,36 @@
 }
 
 :root[data-accent="teal"] { --acc: #0f766e; }
+:root[data-accent="green"] { --acc: #15803d; }
 :root[data-accent="violet"] { --acc: #6d4bd6; }
 :root[data-accent="amber"] { --acc: #b7791f; }
+:root[data-accent="orange"] { --acc: #c2410c; }
 :root[data-accent="rose"] { --acc: #be3455; }
+:root[data-accent="slate"] { --acc: #475569; }
 :root[data-theme="dark"][data-accent="teal"] { --acc: #5eead4; }
+:root[data-theme="dark"][data-accent="green"] { --acc: #4ade80; }
 :root[data-theme="dark"][data-accent="violet"] { --acc: #c4b5fd; }
 :root[data-theme="dark"][data-accent="amber"] { --acc: #fcd34d; }
+:root[data-theme="dark"][data-accent="orange"] { --acc: #fdba74; }
 :root[data-theme="dark"][data-accent="rose"] { --acc: #fda4af; }
+:root[data-theme="dark"][data-accent="slate"] { --acc: #cbd5e1; }
+
+:root[data-contrast="high"] {
+  --bg: #ffffff;
+  --ink: #000000;
+  --mut: #1f2937;
+  --card: #ffffff;
+  --soft: #e5e7eb;
+  --line: #4b5563;
+}
+:root[data-theme="dark"][data-contrast="high"] {
+  --bg: #000000;
+  --ink: #ffffff;
+  --mut: #e5e7eb;
+  --card: #000000;
+  --soft: #1f1f1f;
+  --line: #9ca3af;
+}
 
 @theme inline {
   --color-bg: var(--bg);
@@ -66,7 +89,7 @@
     margin: 0;
     background: var(--bg);
     color: var(--ink);
-    font: 16px/1.45 var(--font-sans);
+    font: 1rem/1.45 var(--font-sans);
     -webkit-font-smoothing: antialiased;
   }
   input[type="range"] {
@@ -76,6 +99,18 @@
     outline: 2px solid var(--acc);
     outline-offset: 2px;
   }
+}
+
+:root[data-text="small"] { font-size: 15px; }
+:root[data-text="large"] { font-size: 18px; }
+
+:root[data-motion="reduce"] *,
+:root[data-motion="reduce"] *::before,
+:root[data-motion="reduce"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
 }
 
 @layer components {

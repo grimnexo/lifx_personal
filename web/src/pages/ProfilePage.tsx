@@ -1,21 +1,7 @@
 import { useState, type FormEvent } from 'react';
-import { useAuth } from '../auth';
-import { ACCENTS, getAccent, getThemeMode, type Accent, type ThemeMode } from '../theme';
+import { useAuth, type User } from '../auth';
+import { ACCENTS, ACCENT_INFO, type Appearance } from '../theme';
 import { Badge, Field, PageTitle, btnPrimary, btnSmall, card, input } from '../components/ui';
-
-const swatch: Record<Accent, string> = {
-  blue: '#2563eb',
-  teal: '#0f766e',
-  violet: '#6d4bd6',
-  amber: '#b7791f',
-  rose: '#be3455',
-};
-
-const modes: [ThemeMode, string][] = [
-  ['auto', 'Auto'],
-  ['light', 'Light'],
-  ['dark', 'Dark'],
-];
 
 interface Msg {
   ok: boolean;
@@ -39,7 +25,7 @@ export function ProfilePage() {
       <PageTitle title="Profile" subtitle={`Signed in as ${user.username}`} />
       <div className="grid items-start gap-5 lg:grid-cols-2">
         <ProfileCard />
-        <AppearanceCard />
+        <AppearanceCard user={user} />
         <PasswordCard />
         <PinCard />
         <section className={card} aria-labelledby="session-head">
@@ -92,13 +78,11 @@ function ProfileCard() {
   );
 }
 
-function AppearanceCard() {
-  const { user, saveAccount } = useAuth();
+function AppearanceCard({ user }: { user: User }) {
+  const { saveAccount } = useAuth();
   const [msg, setMsg] = useState<Msg | null>(null);
-  const mode = user?.theme ?? getThemeMode();
-  const accent = user?.accent ?? getAccent();
 
-  const pick = async (body: { theme?: ThemeMode; accent?: Accent }) => {
+  const pick = async (body: Partial<Appearance>) => {
     const r = await saveAccount(body);
     setMsg(r.ok ? null : { ok: false, text: r.error ?? 'Could not save.' });
   };
@@ -108,39 +92,92 @@ function AppearanceCard() {
       <h2 id="appearance-head" className="text-lg font-semibold">
         Appearance
       </h2>
-      <div className="grid gap-2">
-        <span className="text-[.9rem] font-medium">Theme</span>
-        <div role="group" aria-label="Theme" className="inline-flex w-fit overflow-hidden rounded-lg border border-line">
-          {modes.map(([m, label]) => (
-            <button
-              key={m}
-              aria-pressed={mode === m}
-              className={`cursor-pointer border-0 px-4 py-1.5 text-[.9rem] ${mode === m ? 'bg-acc font-semibold text-on-acc' : 'bg-card text-ink hover:bg-soft'}`}
-              onClick={() => void pick({ theme: m })}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
+      <Choice
+        label="Color scheme"
+        value={user.theme}
+        options={[
+          ['auto', 'Auto'],
+          ['light', 'Light'],
+          ['dark', 'Dark'],
+        ]}
+        onPick={(theme) => void pick({ theme })}
+      />
+      <Choice
+        label="Contrast"
+        value={user.contrast}
+        options={[
+          ['standard', 'Standard'],
+          ['high', 'High'],
+        ]}
+        onPick={(contrast) => void pick({ contrast })}
+      />
       <div className="grid gap-2">
         <span className="text-[.9rem] font-medium">Accent color</span>
         <div className="flex flex-wrap gap-2.5">
           {ACCENTS.map((a) => (
             <button
               key={a}
-              aria-label={`${a} accent`}
-              aria-pressed={accent === a}
-              title={a}
+              aria-label={`${ACCENT_INFO[a].label} accent`}
+              aria-pressed={user.accent === a}
+              title={ACCENT_INFO[a].label}
               onClick={() => void pick({ accent: a })}
-              className={`size-9 cursor-pointer rounded-full border-2 ${accent === a ? 'border-ink' : 'border-transparent'}`}
-              style={{ background: swatch[a] }}
+              className={`size-9 cursor-pointer rounded-full border-2 ${user.accent === a ? 'border-ink' : 'border-transparent'}`}
+              style={{ background: ACCENT_INFO[a].swatch }}
             />
           ))}
         </div>
       </div>
+      <Choice
+        label="Text size"
+        value={user.textSize}
+        options={[
+          ['small', 'Small'],
+          ['default', 'Default'],
+          ['large', 'Large'],
+        ]}
+        onPick={(textSize) => void pick({ textSize })}
+      />
+      <Choice
+        label="Motion"
+        value={user.motion}
+        options={[
+          ['system', 'Follow system'],
+          ['reduce', 'Reduce'],
+        ]}
+        onPick={(motion) => void pick({ motion })}
+      />
       <Status msg={msg} />
     </section>
+  );
+}
+
+function Choice<T extends string>({
+  label,
+  value,
+  options,
+  onPick,
+}: {
+  label: string;
+  value: T;
+  options: [T, string][];
+  onPick: (v: T) => void;
+}) {
+  return (
+    <div className="grid gap-2">
+      <span className="text-[.9rem] font-medium">{label}</span>
+      <div role="group" aria-label={label} className="inline-flex w-fit flex-wrap overflow-hidden rounded-lg border border-line">
+        {options.map(([v, text]) => (
+          <button
+            key={v}
+            aria-pressed={value === v}
+            className={`cursor-pointer border-0 px-4 py-1.5 text-[.9rem] ${value === v ? 'bg-acc font-semibold text-on-acc' : 'bg-card text-ink hover:bg-soft'}`}
+            onClick={() => onPick(v)}
+          >
+            {text}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 

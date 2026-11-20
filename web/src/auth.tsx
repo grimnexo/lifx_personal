@@ -1,15 +1,13 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { api, setSessionToken } from './api';
-import { setAccent, setThemeMode, type Accent, type ThemeMode } from './theme';
+import { applyAppearance, normalizeAppearance, type Appearance } from './theme';
 import type { ApiResult } from './types';
 
-export interface User {
+export interface User extends Appearance {
   id: string;
   username: string;
   name: string;
-  theme: ThemeMode;
-  accent: Accent;
   hasPin: boolean;
 }
 
@@ -30,8 +28,7 @@ export function useAuth(): AuthCtx {
 }
 
 function applyUserAppearance(u: User) {
-  setThemeMode(u.theme);
-  setAccent(u.accent);
+  applyAppearance(normalizeAppearance(u));
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {

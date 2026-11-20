@@ -108,12 +108,23 @@ def new_user(username, name, password):
             'password': hash_secret(password), 'pin': None}
 
 
-ACCENTS = ('blue', 'teal', 'violet', 'amber', 'rose')
+APPEARANCE_OPTIONS = {
+    'theme': ('auto', 'light', 'dark'),
+    'accent': ('blue', 'teal', 'green', 'violet', 'amber', 'orange', 'rose', 'slate'),
+    'contrast': ('standard', 'high'),
+    'textSize': ('small', 'default', 'large'),
+    'motion': ('system', 'reduce'),
+}
+APPEARANCE_DEFAULTS = {'theme': 'auto', 'accent': 'blue', 'contrast': 'standard', 'textSize': 'default', 'motion': 'system'}
+
+
+def appearance_of(u):
+    return {k: u.get(k, APPEARANCE_DEFAULTS[k]) for k in APPEARANCE_OPTIONS}
 
 
 def public_user(u):
-    return {'id': u['id'], 'username': u['username'], 'name': u['name'], 'theme': u.get('theme', 'auto'),
-            'accent': u.get('accent', 'blue'), 'hasPin': bool(u.get('pin'))}
+    return {'id': u['id'], 'username': u['username'], 'name': u['name'], **appearance_of(u),
+            'hasPin': bool(u.get('pin'))}
 
 
 if store.user_count() == 0:
@@ -578,12 +589,12 @@ class Handler(BaseHTTPRequestHandler):
         name = str(b['name']).strip()[:40] if 'name' in b else user['name']
         if not name:
             return self.send_json({'ok': False, 'error': 'Name cannot be empty'}, 400)
-        theme = b.get('theme', user.get('theme', 'auto'))
-        if theme not in ('auto', 'light', 'dark'):
-            return self.send_json({'ok': False, 'error': 'Theme must be auto, light or dark'}, 400)
-        accent = b.get('accent', user.get('accent', 'blue'))
-        if accent not in ACCENTS:
-            return self.send_json({'ok': False, 'error': 'Unknown accent color'}, 400)
+        appearance = appearance_of(user)
+        for key, options in APPEARANCE_OPTIONS.items():
+            value = b.get(key, appearance[key])
+            if value not in options:
+                return self.send_json({'ok': False, 'error': f'Unknown value for {key}'}, 400)
+            appearance[key] = value
         changes_secret = 'newPassword' in b or 'pin' in b
         if changes_secret and not check_secret(str(b.get('currentPassword', '')), user['password']):
             return self.send_json({'ok': False, 'error': 'Current password is wrong'}, 403)
@@ -593,7 +604,8 @@ class Handler(BaseHTTPRequestHandler):
         pin = str(b['pin']).strip() if 'pin' in b else None
         if pin and not (pin.isdigit() and 4 <= len(pin) <= 8):
             return self.send_json({'ok': False, 'error': 'PIN must be 4 to 8 digits'}, 400)
-        user['name'], user['theme'], user['accent'] = name, theme, accent
+        user['name'] = name
+        user.update(appearance)
         if new_pw is not None:
             user['password'] = hash_secret(new_pw)
         if pin is not None:
