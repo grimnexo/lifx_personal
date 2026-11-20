@@ -89,9 +89,14 @@ export interface Schedule {
   next?: string | null;
 }
 
+export interface LightIp {
+  ip: string;
+  name: string;
+}
+
 export interface Settings {
   broadcast: string;
-  ips: string[];
+  ips: LightIp[];
   scan: string[];
   poll: number;
   transition: number;

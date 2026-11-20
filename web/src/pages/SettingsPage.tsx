@@ -1,14 +1,13 @@
-import { useState, type ChangeEvent, type FormEvent } from 'react';
+import { useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useApp } from '../context';
 import { plural } from '../constants';
-import { APP_ICONS, APP_ICON_LABELS, DEFAULT_LABEL, LABEL_MAX, brandLabel, updateBranding, useBranding, type AppIcon } from '../branding';
+import { APP_ICONS, APP_ICON_LABELS, DEFAULT_LABEL, LABEL_MAX, brandLabel, iconFromFile, updateBranding, useBranding, type AppIcon } from '../branding';
 import { BrandTile } from '../components/BrandTile';
-import type { Group, Settings } from '../types';
+import type { Group, LightIp, Settings } from '../types';
 import { Field, PageTitle, Switch, btnPrimary, btnSmall, card, input } from '../components/ui';
 
 interface Form {
   broadcast: string;
-  ips: string;
   scan: string;
   poll: string;
   offline: string;
@@ -33,9 +32,25 @@ const TABS = [
 
 type TabId = (typeof TABS)[number]['id'];
 
+const BROADCAST_PRESETS = [
+  { value: '255.255.255.255', label: '255.255.255.255 (any network, default)' },
+  { value: '192.168.0.255', label: '192.168.0.255 (192.168.0.x)' },
+  { value: '192.168.1.255', label: '192.168.1.255 (192.168.1.x)' },
+  { value: '192.168.2.255', label: '192.168.2.255 (192.168.2.x)' },
+  { value: '10.0.0.255', label: '10.0.0.255 (10.0.0.x)' },
+  { value: '10.0.1.255', label: '10.0.1.255 (10.0.1.x)' },
+];
+const isCustomBroadcast = (v: string) => !BROADCAST_PRESETS.some((p) => p.value === v);
+
+const PAGE_SIZE = 10;
+const IPV4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
+const isIpv4 = (s: string) => {
+  const m = IPV4.exec(s);
+  return !!m && m.slice(1).every((o) => +o <= 255);
+};
+
 const toForm = (s: Settings): Form => ({
   broadcast: s.broadcast,
-  ips: s.ips.join(', '),
   scan: s.scan.join(', '),
   poll: String(s.poll),
   offline: s.offline_after == null ? '' : String(s.offline_after),
@@ -73,9 +88,16 @@ function SettingsForm() {
   const [f, setF] = useState<Form>(saved);
   const [msg, setMsg] = useState<Msg | null>(null);
   const [tab, setTab] = useState<TabId>('network');
+  const [customBroadcast, setCustomBroadcast] = useState(() => isCustomBroadcast(settings.broadcast));
   const dirty = JSON.stringify(f) !== JSON.stringify(saved);
 
   const field = (k: keyof Form) => (e: ChangeEvent<HTMLInputElement>) => setF((x) => ({ ...x, [k]: e.target.value }));
+
+  const chooseBroadcast = (e: ChangeEvent<HTMLSelectElement>) => {
+    if (e.target.value === 'custom') return setCustomBroadcast(true);
+    setCustomBroadcast(false);
+    setF((x) => ({ ...x, broadcast: e.target.value }));
+  };
 
   const useMyLocation = () => {
     if (!navigator.geolocation) return setMsg({ ok: false, text: 'This browser can\u2019t read your location. Enter it manually.' });
@@ -91,7 +113,6 @@ function SettingsForm() {
     if (err) return setMsg({ ok: false, text: err });
     const r = await saveSettings({
       broadcast: f.broadcast.trim(),
-      ips: list(f.ips),
       scan: list(f.scan),
       poll: +f.poll,
       offline_after: f.offline.trim() ? +f.offline : null,
@@ -156,17 +177,28 @@ function SettingsForm() {
                   </div>
                 </dl>
               )}
-              <Field label="Broadcast address" hint="Use your subnet’s broadcast (e.g. 192.168.1.255) if lights aren’t found.">
-                <input className={input} value={f.broadcast} onChange={field('broadcast')} />
+              <Field label="Broadcast address" hint="Where this server sends its discovery message. Pick your subnet if lights aren’t found.">
+                <select className={input} value={customBroadcast ? 'custom' : f.broadcast} onChange={chooseBroadcast}>
+                  {BROADCAST_PRESETS.map((p) => (
+                    <option key={p.value} value={p.value}>
+                      {p.label}
+                    </option>
+                  ))}
+                  <option value="custom">Custom…</option>
+                </select>
               </Field>
-              <Field label="Extra light IPs" hint="Comma-separated. Useful for lights on another subnet or when broadcasts are blocked.">
-                <input className={input} value={f.ips} placeholder="192.168.1.50, 192.168.1.51" onChange={field('ips')} />
-              </Field>
+              {customBroadcast && (
+                <Field label="Custom broadcast address" hint="For example 172.16.5.255.">
+                  <input className={input} value={f.broadcast} placeholder="192.168.1.255" onChange={field('broadcast')} />
+                </Field>
+              )}
               <Field label="Scan ranges" hint="Optional, comma-separated CIDR ranges. Leave blank to scan this server’s own /24.">
                 <input className={input} value={f.scan} placeholder="10.69.1.0/24" onChange={field('scan')} />
               </Field>
             </section>
           )}
+
+          {tab === 'network' && <LightAddressesCard />}
 
           {tab === 'connection' && (
             <section className={card} aria-labelledby="connection-head">
@@ -237,7 +269,14 @@ function SettingsForm() {
             {version && <small className="text-mut">Version {version}</small>}
           </div>
           {dirty && (
-            <button type="button" className={btnSmall} onClick={() => setF(saved)}>
+            <button
+              type="button"
+              className={btnSmall}
+              onClick={() => {
+                setF(saved);
+                setCustomBroadcast(isCustomBroadcast(saved.broadcast));
+              }}
+            >
               Discard changes
             </button>
           )}
@@ -253,6 +292,20 @@ function SettingsForm() {
 function ApplicationCard() {
   const branding = useBranding();
   const isDefault = branding.icon === 'bulb' && branding.label === DEFAULT_LABEL;
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [iconErr, setIconErr] = useState<string | null>(null);
+
+  const onFile = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const customIcon = await iconFromFile(file);
+      setIconErr(updateBranding({ customIcon, icon: 'custom' }) ? null : 'Browser storage is full. Try a smaller image.');
+    } catch (err) {
+      setIconErr(err instanceof Error ? err.message : 'That image could not be used.');
+    }
+  };
 
   return (
     <section className={card} aria-labelledby="application-head">
@@ -263,7 +316,7 @@ function ApplicationCard() {
         <p className="m-0 text-[.9rem] text-mut">How the app is branded in the navigation bar. Saved on this device and applied right away.</p>
       </div>
       <div className="flex items-center gap-3 rounded-lg bg-soft p-3">
-        <BrandTile icon={branding.icon} />
+        <BrandTile icon={branding.icon} customIcon={branding.customIcon} />
         <span className="min-w-0 truncate font-bold">{brandLabel(branding)}</span>
       </div>
       <Field label="Navigation label" hint={`Shown next to the icon. Up to ${LABEL_MAX} characters.`}>
@@ -297,7 +350,45 @@ function ApplicationCard() {
               </button>
             );
           })}
+          {branding.customIcon && (
+            <button
+              type="button"
+              aria-pressed={branding.icon === 'custom'}
+              aria-label="Uploaded icon"
+              title="Uploaded icon"
+              onClick={() => updateBranding({ icon: 'custom' })}
+              className={`grid size-11 cursor-pointer place-items-center rounded-xl border-2 bg-card ${
+                branding.icon === 'custom' ? 'border-acc text-acc' : 'border-line text-mut hover:text-ink'
+              }`}
+            >
+              <BrandTile icon="custom" customIcon={branding.customIcon} />
+            </button>
+          )}
         </div>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className={btnSmall} onClick={() => fileRef.current?.click()}>
+            Upload icon
+          </button>
+          {branding.customIcon && (
+            <button type="button" className={btnSmall} onClick={() => updateBranding({ customIcon: null })}>
+              Remove uploaded icon
+            </button>
+          )}
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            aria-label="Upload app icon"
+            onChange={onFile}
+          />
+        </div>
+        {iconErr && (
+          <small role="alert" className="text-danger">
+            {iconErr}
+          </small>
+        )}
+        <small className="text-mut">Uploads are cropped to a square and stored in this browser.</small>
       </fieldset>
       <div>
         <button
@@ -309,6 +400,204 @@ function ApplicationCard() {
           Reset to default
         </button>
       </div>
+    </section>
+  );
+}
+
+function LightAddressesCard() {
+  const { settings, saveSettings, refresh, ask } = useApp();
+  const records = settings.ips;
+  const [open, setOpen] = useState(false);
+  const [ip, setIp] = useState('');
+  const [name, setName] = useState('');
+  const [query, setQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const q = query.trim().toLowerCase();
+  const matches = useMemo(
+    () => (q ? records.filter((r) => r.ip.includes(q) || r.name.toLowerCase().includes(q)) : records),
+    [records, q],
+  );
+  const pages = Math.max(1, Math.ceil(matches.length / PAGE_SIZE));
+  const current = Math.min(page, pages);
+  const rows = matches.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE);
+
+  const persist = async (next: LightIp[]) => {
+    setBusy(true);
+    const r = await saveSettings({ ips: next });
+    setBusy(false);
+    if (!r.ok) {
+      setErr(r.error ?? 'Could not save light addresses.');
+      return false;
+    }
+    setErr(null);
+    await refresh();
+    return true;
+  };
+
+  const add = async () => {
+    const address = ip.trim();
+    if (!isIpv4(address)) return setErr('Enter a valid IPv4 address, like 192.168.1.50.');
+    if (records.some((r) => r.ip === address)) return setErr('That address is already in the list.');
+    if (await persist([...records, { ip: address, name: name.trim() }])) {
+      setIp('');
+      setName('');
+    }
+  };
+
+  const remove = (r: LightIp) =>
+    ask(`Remove ${r.name || r.ip} from the light addresses?`, 'Remove', () =>
+      void persist(records.filter((x) => x.ip !== r.ip)),
+    );
+
+  return (
+    <section className={`${card} [grid-column:1/-1]`} aria-labelledby="addresses-head">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 id="addresses-head" className="text-lg font-semibold">
+            Light addresses
+          </h2>
+          <p className="m-0 text-[.9rem] text-mut">
+            {records.length ? `${plural(records.length, 'address')} saved` : 'Lights you want found at a specific IP address.'}
+          </p>
+        </div>
+        <button
+          type="button"
+          className={btnSmall}
+          aria-expanded={open}
+          aria-controls="addresses-body"
+          onClick={() => setOpen((o) => !o)}
+        >
+          {open ? 'Hide addresses' : 'Manage addresses'}
+        </button>
+      </div>
+
+      {open && (
+        <div id="addresses-body" className="grid gap-3">
+          <p className="m-0 text-[.9rem] text-mut">
+            Use this for lights on another subnet or when broadcasts are blocked. Names are only shown here.
+          </p>
+          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+            <input
+              className={input}
+              inputMode="decimal"
+              placeholder="192.168.1.50"
+              aria-label="Light IP address"
+              value={ip}
+              onChange={(e) => setIp(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  void add();
+                }
+              }}
+            />
+            <input
+              className={input}
+              maxLength={60}
+              placeholder="Internal name, e.g. Kitchen lamp"
+              aria-label="Internal name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  void add();
+                }
+              }}
+            />
+            <button type="button" className={btnPrimary} disabled={busy || !ip.trim()} onClick={() => void add()}>
+              Add light
+            </button>
+          </div>
+          {err && (
+            <small role="alert" className="text-danger">
+              {err}
+            </small>
+          )}
+          <input
+            type="search"
+            className={input}
+            placeholder="Search by name or IP"
+            aria-label="Search light addresses"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setPage(1);
+            }}
+            onKeyDown={(e) => e.key === 'Enter' && e.preventDefault()}
+          />
+          <div className="overflow-hidden rounded-lg border border-line">
+            <table className="w-full border-collapse text-left text-[.9rem]">
+              <thead className="bg-soft text-[.8rem] text-mut">
+                <tr>
+                  <th scope="col" className="px-3 py-2 font-medium">
+                    Name
+                  </th>
+                  <th scope="col" className="px-3 py-2 font-medium">
+                    IP address
+                  </th>
+                  <th scope="col" className="w-px px-3 py-2">
+                    <span className="sr-only">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.ip} className="border-t border-line">
+                    <td className="px-3 py-2 font-medium">{r.name || <span className="text-mut">Unnamed</span>}</td>
+                    <td className="px-3 py-2 tabular-nums">{r.ip}</td>
+                    <td className="px-3 py-2 text-right">
+                      <button
+                        type="button"
+                        className={btnSmall}
+                        disabled={busy}
+                        aria-label={`Remove ${r.name || r.ip}`}
+                        onClick={() => remove(r)}
+                      >
+                        Remove
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {rows.length === 0 && (
+              <p className="m-0 border-t border-line px-3 py-4 text-center text-mut">
+                {records.length === 0 ? 'No addresses yet.' : 'No addresses match your search.'}
+              </p>
+            )}
+          </div>
+          {matches.length > PAGE_SIZE && (
+            <nav
+              aria-label="Light address pages"
+              className="flex flex-wrap items-center justify-between gap-2 text-[.85rem] text-mut"
+            >
+              <span>
+                Showing {(current - 1) * PAGE_SIZE + 1}–{Math.min(current * PAGE_SIZE, matches.length)} of {matches.length}
+              </span>
+              <div className="flex items-center gap-2">
+                <button type="button" className={btnSmall} disabled={current <= 1} onClick={() => setPage(current - 1)}>
+                  Previous
+                </button>
+                <span>
+                  Page {current} of {pages}
+                </span>
+                <button
+                  type="button"
+                  className={btnSmall}
+                  disabled={current >= pages}
+                  onClick={() => setPage(current + 1)}
+                >
+                  Next
+                </button>
+              </div>
+            </nav>
+          )}
+        </div>
+      )}
     </section>
   );
 }

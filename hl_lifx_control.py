@@ -34,8 +34,25 @@ if not store.has_app_data() and store.user_count() == 0:
         store.import_legacy(legacy)
         print(f'Imported settings and accounts into {os.path.basename(DB_FILE)}')
 
+def clean_light_ips(items):
+    out, seen = [], set()
+    for x in (items if isinstance(items, list) else []):
+        raw_ip, name = (x.get('ip'), x.get('name')) if isinstance(x, dict) else (x, '')
+        ip = str(raw_ip or '').strip()
+        try:
+            ipaddress.IPv4Address(ip)
+        except ValueError:
+            continue
+        if ip in seen:
+            continue
+        seen.add(ip)
+        out.append({'ip': ip, 'name': str(name or '').strip()[:60]})
+    return out
+
+
 db = {'settings': {'broadcast': '255.255.255.255', 'ips': [], 'poll': 3, 'transition': 0.5, 'scan': [], 'lat': None, 'lon': None, 'light_order': [], 'offline_after': None}}
 db['settings'].update(store.get_data('settings', {}))
+db['settings']['ips'] = clean_light_ips(db['settings']['ips'])
 for _key in LIST_KEYS:
     db[_key] = store.get_data(_key, [])
 
@@ -229,8 +246,8 @@ def poll_once(n):
         s = db['settings']
         tx(packet(2), s['broadcast'])  # GetService: discovers new lights
         tx(packet(2), '255.255.255.255')
-        for ip in s['ips']:
-            tx(packet(2), ip)
+        for rec in s['ips']:
+            tx(packet(2), rec['ip'])
         if not devices or n % 10 == 0:  # broadcasts can be filtered; also probe each address directly
             for ip in scan_targets():
                 tx(packet(2), ip)
@@ -767,7 +784,7 @@ class Handler(BaseHTTPRequestHandler):
             if isinstance(b.get('broadcast'), str) and b['broadcast'].strip():
                 s['broadcast'] = b['broadcast'].strip()
             if isinstance(b.get('ips'), list):
-                s['ips'] = [str(x).strip() for x in b['ips'] if str(x).strip()]
+                s['ips'] = clean_light_ips(b['ips'])
             for k, lim in (('lat', 90), ('lon', 180)):
                 if k in b:
                     try:

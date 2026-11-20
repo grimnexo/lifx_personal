@@ -85,7 +85,7 @@ export function AppShell() {
               title={name}
               className="flex min-w-0 items-center gap-2 text-[1.05rem] font-bold text-ink no-underline"
             >
-              <BrandTile icon={branding.icon} />
+              <BrandTile icon={branding.icon} customIcon={branding.customIcon} />
               <span className={collapsed ? 'sr-only' : 'truncate'}>{name}</span>
             </NavLink>
             <button
@@ -131,7 +131,7 @@ export function AppShell() {
       >
         <div className="mx-auto flex max-w-[1100px] items-center gap-x-6 px-4 py-3">
           <NavLink to="/" className="flex items-center gap-2 text-[1.05rem] font-bold text-ink no-underline">
-            <BrandTile icon={branding.icon} />
+            <BrandTile icon={branding.icon} customIcon={branding.customIcon} />
             {name}
           </NavLink>
           <ul className="m-0 hidden list-none gap-1 p-0 md:flex">
