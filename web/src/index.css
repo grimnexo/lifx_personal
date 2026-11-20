@@ -1,0 +1,69 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #e3e8ee;
+  --ink: #17222d;
+  --mut: #5d6b78;
+  --card: #fff;
+  --line: #cfd7df;
+  --acc: #2b5d8a;
+  --ipc: #8f9aa6;
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --bg: #141b22;
+  --ink: #e6ecf2;
+  --mut: #93a1ae;
+  --card: #1e2830;
+  --line: #2f3b46;
+  --acc: #7fb3e0;
+  --ipc: #8996a3;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-ink: var(--ink);
+  --color-mut: var(--mut);
+  --color-card: var(--card);
+  --color-line: var(--line);
+  --color-acc: var(--acc);
+  --color-ipc: var(--ipc);
+}
+
+@layer base {
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.4 ui-rounded, "Avenir Next", system-ui, sans-serif;
+  }
+  input[type="range"] {
+    accent-color: var(--acc);
+  }
+}
+
+@layer components {
+  .kelvin {
+    appearance: none;
+    height: 10px;
+    border-radius: 9px;
+    background: linear-gradient(90deg, #ff9d3a, #fff4e5 45%, #cfe0ff, #8fb4ff);
+  }
+  .kelvin::-webkit-slider-thumb {
+    appearance: none;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #fff;
+    border: 2px solid #555;
+  }
+  .kelvin::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #fff;
+    border: 2px solid #555;
+  }
+}

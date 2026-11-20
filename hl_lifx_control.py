@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """hl_lifx_control: local LIFX controller. Speaks the LIFX LAN UDP protocol and serves a web UI + JSON API.
 Standard library only (Python 3.8+). See README.md."""
-import datetime as dt, ipaddress, json, math, os, random, socket, struct, threading, time
+import datetime as dt, ipaddress, json, math, mimetypes, os, random, socket, struct, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 VERSION = '1.0.1'  # bump on every release and add an entry to CHANGELOG.md
@@ -9,6 +9,7 @@ PORT = int(os.environ.get('PORT', 8080))
 LIFX = 56700
 SRC = 0x4C494658
 HERE = os.path.dirname(os.path.abspath(__file__))
+DIST = os.path.join(HERE, 'web', 'dist')  # built by `npm run build` in web/
 DATA = os.path.join(HERE, 'config.json')
 _OLD = os.path.join(HERE, 'data.json')  # name used by earlier versions
 if not os.path.exists(DATA) and os.path.exists(_OLD):
@@ -50,11 +51,16 @@ def packet(mtype, mac=None, payload=b''):
     return hdr + payload
 
 
+send_failures = {}
+
+
 def tx(buf, ip):
     try:
         sock.sendto(buf, (ip, LIFX))
     except OSError as e:
-        print('send error:', ip, e)
+        send_failures[e.errno] = send_failures.get(e.errno, 0) + 1
+        if send_failures[e.errno] == 1:
+            print('send error:', ip, e, '(further errors of this type are suppressed)')
 
 
 stats = {'replies': 0}
@@ -407,6 +413,25 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             return {}
 
+    def serve_web(self, path):
+        full = os.path.abspath(os.path.join(DIST, path.lstrip('/') or 'index.html'))
+        if not full.startswith(DIST + os.sep) or not os.path.isfile(full):
+            full = os.path.join(DIST, 'index.html')  # client-side fallback for unknown paths
+        try:
+            with open(full, 'rb') as f:
+                data = f.read()
+        except OSError:
+            data = b'Web UI not built. Run: cd web && npm install && npm run build'
+            return self.send_bytes(data, 'text/plain; charset=utf-8', 503)
+        self.send_bytes(data, mimetypes.guess_type(full)[0] or 'application/octet-stream')
+
+    def send_bytes(self, data, ctype, code=200):
+        self.send_response(code)
+        self.send_header('Content-Type', ctype)
+        self.send_header('Content-Length', str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
     def route(self, method):
         try:
             self._route(method)
@@ -422,17 +447,7 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split('?')[0]
         parts = [p for p in path.split('/') if p]
         if not parts or parts[0] != 'api':
-            try:
-                with open(os.path.join(HERE, 'index.html'), 'rb') as f:
-                    data = f.read()
-                self.send_response(200)
-                self.send_header('Content-Type', 'text/html; charset=utf-8')
-                self.send_header('Content-Length', str(len(data)))
-                self.end_headers()
-                self.wfile.write(data)
-            except OSError:
-                self.send_json({'error': 'index.html missing'}, 500)
-            return
+            return self.serve_web(path)
         b = {} if method == 'GET' else self.read_body()
         if path == '/api/state':
             with lock:
