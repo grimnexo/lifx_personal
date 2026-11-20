@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS users (
     name TEXT NOT NULL,
     theme TEXT NOT NULL,
     accent TEXT NOT NULL,
+    palette TEXT NOT NULL DEFAULT 'default',
+    layout TEXT NOT NULL DEFAULT 'top',
     contrast TEXT NOT NULL DEFAULT 'standard',
     text_size TEXT NOT NULL DEFAULT 'default',
     motion TEXT NOT NULL DEFAULT 'system',
@@ -33,13 +35,15 @@ CREATE INDEX IF NOT EXISTS sessions_user ON sessions(user_id);
 
 UPSERT_DATA = ('INSERT INTO app_data (key, value) VALUES (?, ?) '
                'ON CONFLICT(key) DO UPDATE SET value = excluded.value')
-UPSERT_USER = ('INSERT INTO users (id, username, name, theme, accent, contrast, text_size, motion, password, pin) '
-               'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) '
+UPSERT_USER = ('INSERT INTO users (id, username, name, theme, accent, palette, layout, contrast, text_size, motion, password, pin) '
+               'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) '
                'ON CONFLICT(id) DO UPDATE SET name = excluded.name, theme = excluded.theme, '
-               'accent = excluded.accent, contrast = excluded.contrast, text_size = excluded.text_size, '
+               'accent = excluded.accent, palette = excluded.palette, layout = excluded.layout, contrast = excluded.contrast, text_size = excluded.text_size, '
                'motion = excluded.motion, password = excluded.password, pin = excluded.pin')
 
 USER_MIGRATIONS = {
+    'palette': "TEXT NOT NULL DEFAULT 'default'",
+    'layout': "TEXT NOT NULL DEFAULT 'top'",
     'contrast': "TEXT NOT NULL DEFAULT 'standard'",
     'text_size': "TEXT NOT NULL DEFAULT 'default'",
     'motion': "TEXT NOT NULL DEFAULT 'system'",
@@ -54,14 +58,15 @@ def _user(row):
     if row is None:
         return None
     return {'id': row['id'], 'username': row['username'], 'name': row['name'], 'theme': row['theme'],
-            'accent': row['accent'], 'contrast': row['contrast'], 'textSize': row['text_size'],
+            'accent': row['accent'], 'palette': row['palette'], 'layout': row['layout'], 'contrast': row['contrast'], 'textSize': row['text_size'],
             'motion': row['motion'], 'password': json.loads(row['password']),
             'pin': json.loads(row['pin']) if row['pin'] else None}
 
 
 def _user_values(u):
     return (u['id'], u['username'], u['name'], u.get('theme', 'auto'), u.get('accent', 'blue'),
-            u.get('contrast', 'standard'), u.get('textSize', 'default'), u.get('motion', 'system'),
+            u.get('palette', 'default'), u.get('layout', 'top'), u.get('contrast', 'standard'),
+            u.get('textSize', 'default'), u.get('motion', 'system'),
             json.dumps(u['password']), json.dumps(u['pin']) if u.get('pin') else None)
 
 

@@ -111,11 +111,14 @@ def new_user(username, name, password):
 APPEARANCE_OPTIONS = {
     'theme': ('auto', 'light', 'dark'),
     'accent': ('blue', 'teal', 'green', 'violet', 'amber', 'orange', 'rose', 'slate'),
+    'palette': ('default', 'paper', 'mist', 'sage', 'dusk'),
+    'layout': ('top', 'side'),
     'contrast': ('standard', 'high'),
     'textSize': ('small', 'default', 'large'),
     'motion': ('system', 'reduce'),
 }
-APPEARANCE_DEFAULTS = {'theme': 'auto', 'accent': 'blue', 'contrast': 'standard', 'textSize': 'default', 'motion': 'system'}
+APPEARANCE_DEFAULTS = {'theme': 'auto', 'accent': 'blue', 'palette': 'default', 'layout': 'top',
+                       'contrast': 'standard', 'textSize': 'default', 'motion': 'system'}
 
 
 def appearance_of(u):

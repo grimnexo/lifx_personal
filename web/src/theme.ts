@@ -7,6 +7,12 @@ export type Accent = (typeof ACCENTS)[number];
 export const CONTRASTS = ['standard', 'high'] as const;
 export type Contrast = (typeof CONTRASTS)[number];
 
+export const PALETTES = ['default', 'paper', 'mist', 'sage', 'dusk'] as const;
+export type Palette = (typeof PALETTES)[number];
+
+export const LAYOUTS = ['top', 'side'] as const;
+export type Layout = (typeof LAYOUTS)[number];
+
 export const TEXT_SIZES = ['small', 'default', 'large'] as const;
 export type TextSize = (typeof TEXT_SIZES)[number];
 
@@ -16,10 +22,20 @@ export type Motion = (typeof MOTIONS)[number];
 export interface Appearance {
   theme: Scheme;
   accent: Accent;
+  palette: Palette;
+  layout: Layout;
   contrast: Contrast;
   textSize: TextSize;
   motion: Motion;
 }
+
+export const PALETTE_INFO: Record<Palette, string> = {
+  default: 'Default',
+  paper: 'Paper',
+  mist: 'Mist',
+  sage: 'Sage',
+  dusk: 'Dusk',
+};
 
 export const ACCENT_INFO: Record<Accent, { label: string; swatch: string }> = {
   blue: { label: 'Blue', swatch: '#2563eb' },
@@ -35,6 +51,8 @@ export const ACCENT_INFO: Record<Accent, { label: string; swatch: string }> = {
 export const DEFAULT_APPEARANCE: Appearance = {
   theme: 'auto',
   accent: 'blue',
+  palette: 'default',
+  layout: 'top',
   contrast: 'standard',
   textSize: 'default',
   motion: 'system',
@@ -52,6 +70,8 @@ export function normalizeAppearance(v: Partial<Record<keyof Appearance, unknown>
   return {
     theme: pick(SCHEMES, v.theme, DEFAULT_APPEARANCE.theme),
     accent: pick(ACCENTS, v.accent, DEFAULT_APPEARANCE.accent),
+    palette: pick(PALETTES, v.palette, DEFAULT_APPEARANCE.palette),
+    layout: pick(LAYOUTS, v.layout, DEFAULT_APPEARANCE.layout),
     contrast: pick(CONTRASTS, v.contrast, DEFAULT_APPEARANCE.contrast),
     textSize: pick(TEXT_SIZES, v.textSize, DEFAULT_APPEARANCE.textSize),
     motion: pick(MOTIONS, v.motion, DEFAULT_APPEARANCE.motion),
@@ -72,6 +92,7 @@ export function applyTheme() {
   const root = document.documentElement.dataset;
   root.theme = current.theme === 'auto' ? (systemDark.matches ? 'dark' : 'light') : current.theme;
   root.accent = current.accent;
+  root.palette = current.palette;
   root.contrast = current.contrast;
   root.text = current.textSize;
   const reduce = current.motion === 'reduce' || (current.motion === 'system' && systemReduce.matches);

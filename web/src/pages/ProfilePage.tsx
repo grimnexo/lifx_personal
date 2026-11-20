@@ -111,6 +111,18 @@ function AppearanceCard({ user }: { user: User }) {
         ]}
         onPick={(contrast) => void pick({ contrast })}
       />
+      <Choice
+        label="Background"
+        value={user.palette}
+        options={[
+          ['default', 'Default'],
+          ['paper', 'Paper'],
+          ['mist', 'Mist'],
+          ['sage', 'Sage'],
+          ['dusk', 'Dusk'],
+        ]}
+        onPick={(palette) => void pick({ palette })}
+      />
       <div className="grid gap-2">
         <span className="text-[.9rem] font-medium">Accent color</span>
         <div className="flex flex-wrap gap-2.5">
@@ -127,6 +139,15 @@ function AppearanceCard({ user }: { user: User }) {
           ))}
         </div>
       </div>
+      <Choice
+        label="Navigation on desktop"
+        value={user.layout}
+        options={[
+          ['top', 'Top bar'],
+          ['side', 'Sidebar'],
+        ]}
+        onPick={(layout) => void pick({ layout })}
+      />
       <Choice
         label="Text size"
         value={user.textSize}

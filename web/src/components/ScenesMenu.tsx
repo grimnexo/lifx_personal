@@ -4,7 +4,7 @@ import { btnPrimary, btnSmall, input } from './ui';
 
 const row = 'flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-[.9rem] text-ink hover:bg-soft';
 
-export function ScenesMenu() {
+export function ScenesMenu({ align = 'right' }: { align?: 'left' | 'right' }) {
   const { scenes, lights, recallScene, captureScene, updateScenes, ask } = useApp();
   const [open, setOpen] = useState(false);
   const [naming, setNaming] = useState(false);
@@ -42,7 +42,12 @@ export function ScenesMenu() {
         Scenes {'\u25be'}
       </button>
       {open && (
-        <div role="menu" className="absolute right-0 mt-2 grid w-72 gap-1 rounded-[var(--radius)] border border-line bg-card p-2 shadow-card">
+        <div
+          role="menu"
+          className={`absolute mt-2 grid w-72 gap-1 rounded-[var(--radius)] border border-line bg-card p-2 shadow-card ${
+            align === 'left' ? 'left-0' : 'right-0'
+          }`}
+        >
           {scenes.length === 0 && (
             <p className="m-0 px-3 py-2 text-[.85rem] text-mut">
               No scenes yet. Save the current colors and brightness as a scene to recall later.

@@ -5,7 +5,7 @@ import { useAuth } from '../auth';
 const item =
   'flex w-full cursor-pointer items-center gap-2 rounded-lg border-0 bg-transparent px-3 py-2 text-left text-[.9rem] text-ink no-underline hover:bg-soft';
 
-export function UserMenu() {
+export function UserMenu({ align = 'right' }: { align?: 'left' | 'right' }) {
   const { user, signOut } = useAuth();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -53,7 +53,9 @@ export function UserMenu() {
       {open && (
         <div
           role="menu"
-          className="absolute right-0 mt-2 grid w-56 gap-0.5 rounded-[var(--radius)] border border-line bg-card p-1.5 shadow-card"
+          className={`absolute mt-2 grid w-56 gap-0.5 rounded-[var(--radius)] border border-line bg-card p-1.5 shadow-card ${
+            align === 'left' ? 'left-0' : 'right-0'
+          }`}
         >
           <div className="px-3 pb-2 pt-1.5">
             <div className="truncate text-[.9rem] font-semibold text-ink">{user?.name}</div>
