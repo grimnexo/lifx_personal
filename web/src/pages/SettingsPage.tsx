@@ -105,7 +105,7 @@ function SettingsForm() {
   return (
     <>
       <PageTitle title="Settings" subtitle="How this server finds, refreshes and controls your lights." />
-      <div role="tablist" aria-label="Settings categories" className="-mx-4 mb-5 flex gap-1 overflow-x-auto border-b border-line px-4">
+      <div role="tablist" aria-label="Settings categories" className="mb-5 flex flex-wrap gap-x-1 border-b border-line">
         {TABS.map((t) => (
           <button
             key={t.id}
@@ -126,7 +126,12 @@ function SettingsForm() {
       </div>
 
       <form className="grid gap-5" onSubmit={save}>
-        <div role="tabpanel" id="settings-panel" aria-labelledby={`settings-tab-${tab}`} className="grid max-w-2xl items-start gap-5">
+        <div
+          role="tabpanel"
+          id="settings-panel"
+          aria-labelledby={`settings-tab-${tab}`}
+          className="grid items-start gap-5 [grid-template-columns:repeat(auto-fit,minmax(min(100%,24rem),1fr))]"
+        >
           {tab === 'network' && (
             <section className={card} aria-labelledby="network-head">
               <h2 id="network-head" className="text-lg font-semibold">
@@ -276,7 +281,7 @@ function GroupsCard() {
   };
 
   return (
-    <section className={card} aria-labelledby="groups-head">
+    <section className={`${card} [grid-column:1/-1]`} aria-labelledby="groups-head">
       <div>
         <h2 id="groups-head" className="text-lg font-semibold">
           Groups
