@@ -7,9 +7,8 @@ import { LightCard } from '../components/LightCard';
 import { MiniCard } from '../components/MiniCard';
 import { ScheduleCard } from '../components/ScheduleCard';
 import { ScheduleDialog } from '../components/ScheduleDialog';
-import { SettingsDialog } from '../components/SettingsDialog';
 import { ConfirmDialog } from '../components/ConfirmDialog';
-import { Alert, PageTitle, Sortable, btnPrimary, btnSmall, grid, lnk } from '../components/ui';
+import { Alert, PageTitle, Sortable, btnPrimary, btnSmall, card, grid, lnk } from '../components/ui';
 import { whenText } from '../schedule-text';
 import type { SectionKey } from '../types';
 
@@ -23,7 +22,7 @@ function readOpen(k: SectionKey): boolean {
 }
 
 export function DashboardPage() {
-  const { lights, groups, schedules, connError, noLights, powerAll, openSettings, openSchedule, saveOrder } = useApp();
+  const { lights, groups, schedules, connError, noLights, powerAll, openSchedule, saveOrder } = useApp();
   const [open, setOpen] = useState<Record<SectionKey, boolean>>(() => ({
     groups: readOpen('groups'),
     lights: readOpen('lights'),
@@ -46,7 +45,7 @@ export function DashboardPage() {
   };
 
   const onCount = lights.filter((l) => l.on && l.online).length;
-  const countText = lights.length
+  const subtitle = lights.length
     ? `${onCount} of ${lights.length} on`
     : connError
       ? 'Not connected'
@@ -62,20 +61,17 @@ export function DashboardPage() {
 
   return (
     <>
-      <PageTitle title="Lights" subtitle={countText}>
+      <PageTitle title="Lights" subtitle={subtitle}>
         <button className={btnPrimary} onClick={() => powerAll(true)}>
-          All on
+          Turn all on
         </button>
         <button className={btnSmall} onClick={() => powerAll(false)}>
-          All off
-        </button>
-        <button className={btnSmall} onClick={openSettings}>
-          Settings
+          Turn all off
         </button>
       </PageTitle>
 
       {showAlert && (
-        <div className="mb-5">
+        <div className="mt-5">
           <Alert
             tone={connError ? 'danger' : 'info'}
             title={connError ? 'Not connected to the lights server' : 'No lights found yet'}
@@ -87,36 +83,42 @@ export function DashboardPage() {
         </div>
       )}
 
+      <div className="mt-6 grid grid-cols-3 gap-3">
+        <Stat label="Lights" value={lights.length} />
+        <Stat label="Groups" value={visibleGroups.length} />
+        <Stat label="Schedules" value={schedules.length} />
+      </div>
+
       <SectionHead
-        k="schedules"
-        title="Schedules"
-        open={open.schedules}
-        edit={edit.schedules}
-        onToggle={() => toggleSection('schedules')}
-        onEdit={() => setEdit((e) => ({ ...e, schedules: !e.schedules }))}
-        extra={
-          open.schedules && (
-            <button className={`${btnSmall} ml-auto`} onClick={() => openSchedule()}>
-              + New schedule
-            </button>
-          )
-        }
+        k="lights"
+        title="Lights"
+        count={lights.length}
+        open={open.lights}
+        edit={edit.lights}
+        onToggle={() => toggleSection('lights')}
+        onEdit={() => setEdit((e) => ({ ...e, lights: !e.lights }))}
       >
-        {schedules.length === 0 ? (
-          <p className="text-mut">No schedules yet.</p>
-        ) : edit.schedules ? (
-          <Sortable ids={schedules.map((s) => s.id)} onCommit={(ids) => saveOrder('schedules', ids)} className={grid}>
+        {lights.length === 0 ? (
+          <p className="text-mut">No lights found yet.</p>
+        ) : edit.lights ? (
+          <Sortable ids={lights.map((l) => l.mac)} onCommit={(ids) => saveOrder('lights', ids)} className={grid}>
             {(id, grip, dragging) => {
-              const s = schedules.find((x) => x.id === id);
-              return s ? (
-                <MiniCard name={s.name} sub={whenText(s)} color="var(--line)" grip={grip} dragging={dragging} />
+              const l = lights.find((x) => x.mac === id);
+              return l ? (
+                <MiniCard
+                  name={l.label}
+                  sub={lightStatus(l)}
+                  color={l.on && l.online ? lightHex(l) : 'var(--line)'}
+                  grip={grip}
+                  dragging={dragging}
+                />
               ) : null;
             }}
           </Sortable>
         ) : (
           <div className={grid}>
-            {schedules.map((s) => (
-              <ScheduleCard key={s.id} s={s} />
+            {lights.map((l) => (
+              <LightCard key={l.mac} light={l} />
             ))}
           </div>
         )}
@@ -125,6 +127,7 @@ export function DashboardPage() {
       <SectionHead
         k="groups"
         title="Groups"
+        count={visibleGroups.length}
         open={open.groups}
         edit={edit.groups}
         onToggle={() => toggleSection('groups')}
@@ -161,49 +164,60 @@ export function DashboardPage() {
       </SectionHead>
 
       <SectionHead
-        k="lights"
-        title="Lights"
-        open={open.lights}
-        edit={edit.lights}
-        onToggle={() => toggleSection('lights')}
-        onEdit={() => setEdit((e) => ({ ...e, lights: !e.lights }))}
+        k="schedules"
+        title="Schedules"
+        count={schedules.length}
+        open={open.schedules}
+        edit={edit.schedules}
+        onToggle={() => toggleSection('schedules')}
+        onEdit={() => setEdit((e) => ({ ...e, schedules: !e.schedules }))}
+        extra={
+          open.schedules && (
+            <button className={`${btnSmall} ml-auto`} onClick={() => openSchedule()}>
+              + New schedule
+            </button>
+          )
+        }
       >
-        {lights.length === 0 ? (
-          <p className="text-mut">No lights found yet.</p>
-        ) : edit.lights ? (
-          <Sortable ids={lights.map((l) => l.mac)} onCommit={(ids) => saveOrder('lights', ids)} className={grid}>
+        {schedules.length === 0 ? (
+          <p className="text-mut">No schedules yet.</p>
+        ) : edit.schedules ? (
+          <Sortable ids={schedules.map((s) => s.id)} onCommit={(ids) => saveOrder('schedules', ids)} className={grid}>
             {(id, grip, dragging) => {
-              const l = lights.find((x) => x.mac === id);
-              return l ? (
-                <MiniCard
-                  name={l.label}
-                  sub={lightStatus(l)}
-                  color={l.on && l.online ? lightHex(l) : 'var(--line)'}
-                  grip={grip}
-                  dragging={dragging}
-                />
+              const s = schedules.find((x) => x.id === id);
+              return s ? (
+                <MiniCard name={s.name} sub={whenText(s)} color="var(--line)" grip={grip} dragging={dragging} />
               ) : null;
             }}
           </Sortable>
         ) : (
           <div className={grid}>
-            {lights.map((l) => (
-              <LightCard key={l.mac} light={l} />
+            {schedules.map((s) => (
+              <ScheduleCard key={s.id} s={s} />
             ))}
           </div>
         )}
       </SectionHead>
 
-      <SettingsDialog />
       <ScheduleDialog />
       <ConfirmDialog />
     </>
   );
 }
 
+function Stat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className={card}>
+      <span className="text-[.8rem] text-mut">{label}</span>
+      <span className="text-[1.4rem] font-bold tabular-nums text-ink">{value}</span>
+    </div>
+  );
+}
+
 function SectionHead({
   k,
   title,
+  count,
   open,
   edit,
   onToggle,
@@ -213,6 +227,7 @@ function SectionHead({
 }: {
   k: SectionKey;
   title: string;
+  count: number;
   open: boolean;
   edit: boolean;
   onToggle: () => void;
@@ -227,9 +242,10 @@ function SectionHead({
           {open ? '\u25be ' : '\u25b8 '}
           {title}
         </button>
+        <span className="text-[.85rem] font-normal tabular-nums text-mut">{count}</span>
         {open && (
           <button className={btnSmall} onClick={onEdit}>
-            {edit ? 'Done' : 'Edit'}
+            {edit ? 'Done' : 'Reorder'}
           </button>
         )}
         {extra}
