@@ -1,19 +1,22 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth';
+import { brandLabel, updateBranding, useBranding } from '../branding';
+import { BrandTile } from './BrandTile';
 import { ConfirmDialog } from './ConfirmDialog';
+import { Icon, type IconName } from './icons';
 import { Modal } from './ui';
 import { ScenesMenu } from './ScenesMenu';
 import { ScheduleDialog } from './ScheduleDialog';
 import { UserMenu } from './UserMenu';
 
-const sections = [
-  { to: '/', label: 'Dashboard', end: true },
-  { to: '/lights', label: 'Lights', end: false },
-  { to: '/rooms', label: 'Rooms', end: false },
-  { to: '/groups', label: 'Groups', end: false },
-  { to: '/schedules', label: 'Schedules', end: false },
-  { to: '/devices', label: 'Devices', end: false },
+const sections: { to: string; label: string; end: boolean; icon: IconName }[] = [
+  { to: '/', label: 'Dashboard', end: true, icon: 'dashboard' },
+  { to: '/lights', label: 'Lights', end: false, icon: 'lights' },
+  { to: '/rooms', label: 'Rooms', end: false, icon: 'rooms' },
+  { to: '/groups', label: 'Groups', end: false, icon: 'groups' },
+  { to: '/schedules', label: 'Schedules', end: false, icon: 'schedules' },
+  { to: '/devices', label: 'Devices', end: false, icon: 'devices' },
 ];
 
 const mobileTabs = [
@@ -41,7 +44,10 @@ export function AppShell() {
   const { user } = useAuth();
   const [helpOpen, setHelpOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const branding = useBranding();
   const sidebar = user?.layout === 'side';
+  const collapsed = sidebar && branding.sidebarCollapsed;
+  const name = brandLabel(branding);
   const moreActive = moreLinks.some((l) => pathname === l.to || pathname.startsWith(l.to + '/'));
 
   useEffect(() => {
@@ -69,32 +75,52 @@ export function AppShell() {
       {sidebar && (
         <nav
           aria-label="Sidebar"
-          className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col gap-4 border-r border-line bg-card p-4 md:flex"
+          className={`fixed inset-y-0 left-0 z-30 hidden flex-col gap-4 border-r border-line bg-card p-3 md:flex ${
+            collapsed ? 'w-16' : 'w-60 p-4'
+          }`}
         >
-          <NavLink to="/" className="flex items-center gap-2 text-[1.05rem] font-bold text-ink no-underline">
-            <span aria-hidden="true" className="size-7 rounded-lg bg-acc" />
-            Lights
-          </NavLink>
+          <div className={`flex items-center gap-2 ${collapsed ? 'flex-col' : 'justify-between'}`}>
+            <NavLink
+              to="/"
+              title={name}
+              className="flex min-w-0 items-center gap-2 text-[1.05rem] font-bold text-ink no-underline"
+            >
+              <BrandTile icon={branding.icon} />
+              <span className={collapsed ? 'sr-only' : 'truncate'}>{name}</span>
+            </NavLink>
+            <button
+              type="button"
+              onClick={() => updateBranding({ sidebarCollapsed: !branding.sidebarCollapsed })}
+              aria-expanded={!collapsed}
+              aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              className="grid size-8 flex-none cursor-pointer place-items-center rounded-lg border-0 bg-transparent text-mut hover:bg-soft hover:text-ink"
+            >
+              <Icon name={collapsed ? 'chevronRight' : 'chevronLeft'} className="size-4" />
+            </button>
+          </div>
           <ul className="m-0 grid list-none gap-1 p-0">
             {sections.map((l) => (
               <li key={l.to}>
                 <NavLink
                   to={l.to}
                   end={l.end}
+                  title={collapsed ? l.label : undefined}
                   className={({ isActive }) =>
-                    `block rounded-lg px-3 py-2 text-[.95rem] font-medium no-underline transition-colors ${
-                      isActive ? 'bg-soft text-ink' : 'text-mut hover:text-ink'
-                    }`
+                    `flex items-center gap-3 rounded-lg py-2 text-[.95rem] font-medium no-underline transition-colors ${
+                      collapsed ? 'justify-center' : 'px-3'
+                    } ${isActive ? 'bg-soft text-ink' : 'text-mut hover:text-ink'}`
                   }
                 >
-                  {l.label}
+                  <Icon name={l.icon} className="size-5 flex-none" />
+                  <span className={collapsed ? 'sr-only' : ''}>{l.label}</span>
                 </NavLink>
               </li>
             ))}
           </ul>
-          <div className="mt-auto flex items-center gap-2">
-            <ScenesMenu align="left" />
-            <UserMenu align="left" />
+          <div className="mt-auto grid gap-2">
+            <ScenesMenu align="left" drop="up" block={!collapsed} compact={collapsed} />
+            <UserMenu align="left" drop="up" block={!collapsed} compact={collapsed} />
           </div>
         </nav>
       )}
@@ -105,8 +131,8 @@ export function AppShell() {
       >
         <div className="mx-auto flex max-w-[1100px] items-center gap-x-6 px-4 py-3">
           <NavLink to="/" className="flex items-center gap-2 text-[1.05rem] font-bold text-ink no-underline">
-            <span aria-hidden="true" className="size-7 rounded-lg bg-acc" />
-            Lights
+            <BrandTile icon={branding.icon} />
+            {name}
           </NavLink>
           <ul className="m-0 hidden list-none gap-1 p-0 md:flex">
             {sections.map((l) => (
@@ -132,7 +158,11 @@ export function AppShell() {
         </div>
       </nav>
 
-      <main className={`mx-auto max-w-[1100px] px-4 py-6 pb-24 md:pb-6 ${sidebar ? 'md:pl-64' : ''}`}>
+      <main
+        className={`mx-auto max-w-[1100px] px-4 py-6 pb-24 md:pb-6 ${
+          collapsed ? 'md:pl-20' : sidebar ? 'md:pl-64' : ''
+        }`}
+      >
         <Outlet />
       </main>
 

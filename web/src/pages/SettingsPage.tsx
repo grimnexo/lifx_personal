@@ -1,6 +1,8 @@
 import { useState, type ChangeEvent, type FormEvent } from 'react';
 import { useApp } from '../context';
 import { plural } from '../constants';
+import { APP_ICONS, APP_ICON_LABELS, DEFAULT_LABEL, LABEL_MAX, brandLabel, updateBranding, useBranding, type AppIcon } from '../branding';
+import { BrandTile } from '../components/BrandTile';
 import type { Group, Settings } from '../types';
 import { Field, PageTitle, Switch, btnPrimary, btnSmall, card, input } from '../components/ui';
 
@@ -26,6 +28,7 @@ const TABS = [
   { id: 'behavior', label: 'Light behavior' },
   { id: 'location', label: 'Location' },
   { id: 'groups', label: 'Groups' },
+  { id: 'application', label: 'Application' },
 ] as const;
 
 type TabId = (typeof TABS)[number]['id'];
@@ -223,6 +226,7 @@ function SettingsForm() {
           )}
 
           {tab === 'groups' && <GroupsCard />}
+          {tab === 'application' && <ApplicationCard />}
         </div>
 
         <div className="flex flex-wrap items-center justify-end gap-3">
@@ -243,6 +247,69 @@ function SettingsForm() {
         </div>
       </form>
     </>
+  );
+}
+
+function ApplicationCard() {
+  const branding = useBranding();
+  const isDefault = branding.icon === 'bulb' && branding.label === DEFAULT_LABEL;
+
+  return (
+    <section className={card} aria-labelledby="application-head">
+      <div>
+        <h2 id="application-head" className="text-lg font-semibold">
+          Application
+        </h2>
+        <p className="m-0 text-[.9rem] text-mut">How the app is branded in the navigation bar. Saved on this device and applied right away.</p>
+      </div>
+      <div className="flex items-center gap-3 rounded-lg bg-soft p-3">
+        <BrandTile icon={branding.icon} />
+        <span className="min-w-0 truncate font-bold">{brandLabel(branding)}</span>
+      </div>
+      <Field label="Navigation label" hint={`Shown next to the icon. Up to ${LABEL_MAX} characters.`}>
+        <input
+          className={input}
+          maxLength={LABEL_MAX}
+          placeholder={DEFAULT_LABEL}
+          value={branding.label}
+          onChange={(e) => updateBranding({ label: e.target.value })}
+          onKeyDown={(e) => e.key === 'Enter' && e.preventDefault()}
+        />
+      </Field>
+      <fieldset className="m-0 grid gap-2 border-0 p-0">
+        <legend className="mb-1.5 text-[.85rem] text-mut">App icon</legend>
+        <div className="flex flex-wrap gap-2">
+          {APP_ICONS.map((icon: AppIcon) => {
+            const on = branding.icon === icon;
+            return (
+              <button
+                key={icon}
+                type="button"
+                aria-pressed={on}
+                aria-label={APP_ICON_LABELS[icon]}
+                title={APP_ICON_LABELS[icon]}
+                onClick={() => updateBranding({ icon })}
+                className={`grid size-11 cursor-pointer place-items-center rounded-xl border-2 bg-card ${
+                  on ? 'border-acc text-acc' : 'border-line text-mut hover:text-ink'
+                }`}
+              >
+                <BrandTile icon={icon} />
+              </button>
+            );
+          })}
+        </div>
+      </fieldset>
+      <div>
+        <button
+          type="button"
+          className={btnSmall}
+          disabled={isDefault}
+          onClick={() => updateBranding({ icon: 'bulb', label: DEFAULT_LABEL })}
+        >
+          Reset to default
+        </button>
+      </div>
+    </section>
   );
 }
 

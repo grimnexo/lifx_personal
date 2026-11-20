@@ -1,10 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import { useApp } from '../context';
-import { btnPrimary, btnSmall, input } from './ui';
+import { Icon } from './icons';
+import { btn, btnPrimary, btnSmall, input } from './ui';
 
 const row = 'flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-[.9rem] text-ink hover:bg-soft';
 
-export function ScenesMenu({ align = 'right' }: { align?: 'left' | 'right' }) {
+interface MenuPlacement {
+  align?: 'left' | 'right';
+  drop?: 'up' | 'down';
+  block?: boolean;
+  compact?: boolean;
+}
+
+export function ScenesMenu({ align = 'right', drop = 'down', block = false, compact = false }: MenuPlacement) {
   const { scenes, lights, recallScene, captureScene, updateScenes, ask } = useApp();
   const [open, setOpen] = useState(false);
   const [naming, setNaming] = useState(false);
@@ -37,16 +45,36 @@ export function ScenesMenu({ align = 'right' }: { align?: 'left' | 'right' }) {
   }
 
   return (
-    <div className="relative" ref={ref}>
-      <button type="button" aria-haspopup="menu" aria-expanded={open} className={btnSmall} onClick={() => setOpen((o) => !o)}>
-        Scenes {'\u25be'}
-      </button>
+    <div className={block ? 'relative w-full' : 'relative'} ref={ref}>
+      {compact ? (
+        <button
+          type="button"
+          aria-label="Scenes"
+          title="Scenes"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          className={`${btn} grid size-10 place-items-center p-0`}
+          onClick={() => setOpen((o) => !o)}
+        >
+          <Icon name="spark" className="size-4" />
+        </button>
+      ) : (
+        <button
+          type="button"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          className={`${btnSmall} ${block ? 'flex w-full justify-between' : ''}`}
+          onClick={() => setOpen((o) => !o)}
+        >
+          Scenes {'\u25be'}
+        </button>
+      )}
       {open && (
         <div
           role="menu"
-          className={`absolute mt-2 grid w-72 gap-1 rounded-[var(--radius)] border border-line bg-card p-2 shadow-card ${
-            align === 'left' ? 'left-0' : 'right-0'
-          }`}
+          className={`absolute grid w-72 gap-1 rounded-[var(--radius)] border border-line bg-card p-2 shadow-card ${
+            drop === 'up' ? 'bottom-full mb-2' : 'mt-2'
+          } ${align === 'left' ? 'left-0' : 'right-0'}`}
         >
           {scenes.length === 0 && (
             <p className="m-0 px-3 py-2 text-[.85rem] text-mut">
