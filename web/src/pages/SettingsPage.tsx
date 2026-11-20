@@ -20,6 +20,16 @@ interface Msg {
   text: string;
 }
 
+const TABS = [
+  { id: 'network', label: 'Network' },
+  { id: 'connection', label: 'Connection' },
+  { id: 'behavior', label: 'Light behavior' },
+  { id: 'location', label: 'Location' },
+  { id: 'groups', label: 'Groups' },
+] as const;
+
+type TabId = (typeof TABS)[number]['id'];
+
 const toForm = (s: Settings): Form => ({
   broadcast: s.broadcast,
   ips: s.ips.join(', '),
@@ -59,6 +69,7 @@ function SettingsForm() {
   const [saved, setSaved] = useState<Form>(() => toForm(settings));
   const [f, setF] = useState<Form>(saved);
   const [msg, setMsg] = useState<Msg | null>(null);
+  const [tab, setTab] = useState<TabId>('network');
   const dirty = JSON.stringify(f) !== JSON.stringify(saved);
 
   const field = (k: keyof Form) => (e: ChangeEvent<HTMLInputElement>) => setF((x) => ({ ...x, [k]: e.target.value }));
@@ -94,92 +105,122 @@ function SettingsForm() {
   return (
     <>
       <PageTitle title="Settings" subtitle="How this server finds, refreshes and controls your lights." />
-      <form className="grid items-start gap-5 lg:grid-cols-2" onSubmit={save}>
-        <section className={card} aria-labelledby="network-head">
-          <h2 id="network-head" className="text-lg font-semibold">
-            Network
-          </h2>
-          {diag && (
-            <dl className="m-0 grid grid-cols-3 gap-3 rounded-lg bg-soft p-3 text-[.85rem]">
-              <div>
-                <dt className="text-mut">This server</dt>
-                <dd className="m-0 font-semibold tabular-nums">{diag.local_ip ?? 'Unknown'}</dd>
-              </div>
-              <div>
-                <dt className="text-mut">Lights found</dt>
-                <dd className="m-0 font-semibold tabular-nums">{lights.length}</dd>
-              </div>
-              <div>
-                <dt className="text-mut">Replies</dt>
-                <dd className="m-0 font-semibold tabular-nums">{diag.replies}</dd>
-              </div>
-            </dl>
+      <div role="tablist" aria-label="Settings categories" className="-mx-4 mb-5 flex gap-1 overflow-x-auto border-b border-line px-4">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            id={`settings-tab-${t.id}`}
+            aria-selected={tab === t.id}
+            aria-controls="settings-panel"
+            tabIndex={tab === t.id ? 0 : -1}
+            onClick={() => setTab(t.id)}
+            className={`-mb-px shrink-0 cursor-pointer border-0 border-b-2 bg-transparent px-3 py-2 text-[.95rem] ${
+              tab === t.id ? 'border-acc font-semibold text-ink' : 'border-transparent text-mut hover:text-ink'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      <form className="grid gap-5" onSubmit={save}>
+        <div role="tabpanel" id="settings-panel" aria-labelledby={`settings-tab-${tab}`} className="grid max-w-2xl items-start gap-5">
+          {tab === 'network' && (
+            <section className={card} aria-labelledby="network-head">
+              <h2 id="network-head" className="text-lg font-semibold">
+                Network
+              </h2>
+              {diag && (
+                <dl className="m-0 grid grid-cols-3 gap-3 rounded-lg bg-soft p-3 text-[.85rem]">
+                  <div>
+                    <dt className="text-mut">This server</dt>
+                    <dd className="m-0 font-semibold tabular-nums">{diag.local_ip ?? 'Unknown'}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-mut">Lights found</dt>
+                    <dd className="m-0 font-semibold tabular-nums">{lights.length}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-mut">Replies</dt>
+                    <dd className="m-0 font-semibold tabular-nums">{diag.replies}</dd>
+                  </div>
+                </dl>
+              )}
+              <Field label="Broadcast address" hint="Use your subnet’s broadcast (e.g. 192.168.1.255) if lights aren’t found.">
+                <input className={input} value={f.broadcast} onChange={field('broadcast')} />
+              </Field>
+              <Field label="Extra light IPs" hint="Comma-separated. Useful for lights on another subnet or when broadcasts are blocked.">
+                <input className={input} value={f.ips} placeholder="192.168.1.50, 192.168.1.51" onChange={field('ips')} />
+              </Field>
+              <Field label="Scan ranges" hint="Optional, comma-separated CIDR ranges. Leave blank to scan this server’s own /24.">
+                <input className={input} value={f.scan} placeholder="10.69.1.0/24" onChange={field('scan')} />
+              </Field>
+            </section>
           )}
-          <Field label="Broadcast address" hint="Use your subnet’s broadcast (e.g. 192.168.1.255) if lights aren’t found.">
-            <input className={input} value={f.broadcast} onChange={field('broadcast')} />
-          </Field>
-          <Field label="Extra light IPs" hint="Comma-separated. Useful for lights on another subnet or when broadcasts are blocked.">
-            <input className={input} value={f.ips} placeholder="192.168.1.50, 192.168.1.51" onChange={field('ips')} />
-          </Field>
-          <Field label="Scan ranges" hint="Optional, comma-separated CIDR ranges. Leave blank to scan this server’s own /24.">
-            <input className={input} value={f.scan} placeholder="10.69.1.0/24" onChange={field('scan')} />
-          </Field>
-        </section>
 
-        <section className={card} aria-labelledby="connection-head">
-          <h2 id="connection-head" className="text-lg font-semibold">
-            Connection
-          </h2>
-          <Field label="Refresh every (seconds)" hint="How often the server asks lights for their current state.">
-            <input type="number" min={1} step={1} className={input} value={f.poll} onChange={field('poll')} />
-          </Field>
-          <Field label="Mark offline after (seconds)" hint="Leave blank to calculate this from the refresh interval.">
-            <input
-              type="number"
-              min={3}
-              step={1}
-              className={input}
-              placeholder="Automatic"
-              value={f.offline}
-              onChange={field('offline')}
-            />
-          </Field>
-        </section>
+          {tab === 'connection' && (
+            <section className={card} aria-labelledby="connection-head">
+              <h2 id="connection-head" className="text-lg font-semibold">
+                Connection
+              </h2>
+              <Field label="Refresh every (seconds)" hint="How often the server asks lights for their current state.">
+                <input type="number" min={1} step={1} className={input} value={f.poll} onChange={field('poll')} />
+              </Field>
+              <Field label="Mark offline after (seconds)" hint="Leave blank to calculate this from the refresh interval.">
+                <input
+                  type="number"
+                  min={3}
+                  step={1}
+                  className={input}
+                  placeholder="Automatic"
+                  value={f.offline}
+                  onChange={field('offline')}
+                />
+              </Field>
+            </section>
+          )}
 
-        <section className={card} aria-labelledby="control-head">
-          <h2 id="control-head" className="text-lg font-semibold">
-            Light behavior
-          </h2>
-          <Field label="Fade time when changing (seconds)" hint="How long lights take to move to a new color or brightness. 0 is instant.">
-            <input type="number" min={0} step={0.1} className={input} value={f.fade} onChange={field('fade')} />
-          </Field>
-        </section>
+          {tab === 'behavior' && (
+            <section className={card} aria-labelledby="control-head">
+              <h2 id="control-head" className="text-lg font-semibold">
+                Light behavior
+              </h2>
+              <Field label="Fade time when changing (seconds)" hint="How long lights take to move to a new color or brightness. 0 is instant.">
+                <input type="number" min={0} step={0.1} className={input} value={f.fade} onChange={field('fade')} />
+              </Field>
+            </section>
+          )}
 
-        <section className={card} aria-labelledby="location-head">
-          <h2 id="location-head" className="text-lg font-semibold">
-            Location
-          </h2>
-          <p className="m-0 text-[.9rem] text-mut">
-            Sunrise and sunset schedules use these coordinates. Sun times are calculated on this server, so no internet is needed.
-          </p>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Latitude">
-              <input type="number" step="any" className={input} placeholder="e.g. 40.71" value={f.lat} onChange={field('lat')} />
-            </Field>
-            <Field label="Longitude">
-              <input type="number" step="any" className={input} placeholder="e.g. -74.01" value={f.lon} onChange={field('lon')} />
-            </Field>
-          </div>
-          <div>
-            <button type="button" className={btnSmall} onClick={useMyLocation}>
-              Use my current location
-            </button>
-          </div>
-        </section>
+          {tab === 'location' && (
+            <section className={card} aria-labelledby="location-head">
+              <h2 id="location-head" className="text-lg font-semibold">
+                Location
+              </h2>
+              <p className="m-0 text-[.9rem] text-mut">
+                Sunrise and sunset schedules use these coordinates. Sun times are calculated on this server, so no internet is needed.
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Latitude">
+                  <input type="number" step="any" className={input} placeholder="e.g. 40.71" value={f.lat} onChange={field('lat')} />
+                </Field>
+                <Field label="Longitude">
+                  <input type="number" step="any" className={input} placeholder="e.g. -74.01" value={f.lon} onChange={field('lon')} />
+                </Field>
+              </div>
+              <div>
+                <button type="button" className={btnSmall} onClick={useMyLocation}>
+                  Use my current location
+                </button>
+              </div>
+            </section>
+          )}
 
-        <GroupsCard />
+          {tab === 'groups' && <GroupsCard />}
+        </div>
 
-        <div className="flex flex-wrap items-center justify-end gap-3 lg:col-span-2">
+        <div className="flex flex-wrap items-center justify-end gap-3">
           <div className="mr-auto grid gap-0.5">
             <small role="status" className={msg?.ok ? 'text-ok' : 'text-danger'}>
               {msg?.text}
@@ -235,7 +276,7 @@ function GroupsCard() {
   };
 
   return (
-    <section className={`${card} lg:col-span-2`} aria-labelledby="groups-head">
+    <section className={card} aria-labelledby="groups-head">
       <div>
         <h2 id="groups-head" className="text-lg font-semibold">
           Groups

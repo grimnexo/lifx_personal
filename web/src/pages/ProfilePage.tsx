@@ -23,22 +23,26 @@ export function ProfilePage() {
   return (
     <>
       <PageTitle title="Profile" subtitle={`Signed in as ${user.username}`} />
-      <div className="grid items-start gap-5 lg:grid-cols-2">
-        <ProfileCard />
-        <AppearanceCard user={user} />
-        <PasswordCard />
-        <PinCard />
-        <section className={card} aria-labelledby="session-head">
-          <h2 id="session-head" className="text-lg font-semibold">
-            Session
-          </h2>
-          <p className="m-0 text-mut">Sign out on this device. You can sign back in with your password or PIN.</p>
-          <div>
-            <button className={btnSmall} onClick={() => void signOut()}>
-              Sign out
-            </button>
-          </div>
-        </section>
+      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
+        <div className="grid gap-5">
+          <ProfileCard />
+          <PasswordCard />
+          <PinCard />
+          <section className={card} aria-labelledby="session-head">
+            <h2 id="session-head" className="text-lg font-semibold">
+              Session
+            </h2>
+            <p className="m-0 text-mut">Sign out on this device. You can sign back in with your password or PIN.</p>
+            <div>
+              <button className={btnSmall} onClick={() => void signOut()}>
+                Sign out
+              </button>
+            </div>
+          </section>
+        </div>
+        <div className="grid gap-5">
+          <AppearanceCard user={user} />
+        </div>
       </div>
     </>
   );
