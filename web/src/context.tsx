@@ -70,9 +70,6 @@ export interface AppCtx {
   ask(text: string, yes: string, run: () => void, equal?: boolean): void;
   confirm: Confirm | null;
   closeConfirm(): void;
-  settingsOpen: boolean;
-  openSettings(): void;
-  closeSettings(): void;
   draft: ScheduleDraft | null;
   openSchedule(s?: Schedule): void;
   closeSchedule(): void;
@@ -93,6 +90,7 @@ const DEFAULT_SETTINGS: Settings = {
   poll: 3,
   transition: 0.5,
   light_order: [],
+  offline_after: null,
   lat: null,
   lon: null,
 };
@@ -119,7 +117,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [noLights, setNoLights] = useState(false);
   const [cardOpen, setCardOpen] = useState<Record<string, boolean>>({});
   const [confirm, setConfirm] = useState<Confirm | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [draft, setDraft] = useState<ScheduleDraft | null>(null);
 
   const lastEdit = useRef(0);
@@ -443,9 +440,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     ask: (text, yes, run, equal = false) => setConfirm({ text, yes, run, equal }),
     confirm,
     closeConfirm: () => setConfirm(null),
-    settingsOpen,
-    openSettings: () => setSettingsOpen(true),
-    closeSettings: () => setSettingsOpen(false),
     draft,
     openSchedule: (s) => setDraft({ schedule: s ?? null }),
     closeSchedule: () => setDraft(null),

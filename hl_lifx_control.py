@@ -34,7 +34,7 @@ if not store.has_app_data() and store.user_count() == 0:
         store.import_legacy(legacy)
         print(f'Imported settings and accounts into {os.path.basename(DB_FILE)}')
 
-db = {'settings': {'broadcast': '255.255.255.255', 'ips': [], 'poll': 3, 'transition': 0.5, 'scan': [], 'lat': None, 'lon': None, 'light_order': []}}
+db = {'settings': {'broadcast': '255.255.255.255', 'ips': [], 'poll': 3, 'transition': 0.5, 'scan': [], 'lat': None, 'lon': None, 'light_order': [], 'offline_after': None}}
 db['settings'].update(store.get_data('settings', {}))
 for _key in LIST_KEYS:
     db[_key] = store.get_data(_key, [])
@@ -263,8 +263,13 @@ EFFECTS = set(WAVES) | {'flicker'}
 # 'flicker' (candle) has no bulb-side waveform, so the server emulates it: see flicker_loop()
 
 
+def offline_limit():
+    s = db['settings']
+    return s['offline_after'] or s['poll'] * 4 + 3
+
+
 def is_online(d):
-    return time.time() - d['seen'] < db['settings']['poll'] * 4 + 3
+    return time.time() - d['seen'] < offline_limit()
 
 
 def run_effect(macs, kind, color=None, times=None, seconds=None):
@@ -372,7 +377,7 @@ def stop_effect(macs):
 
 
 def view(d):
-    online = time.time() - d['seen'] < db['settings']['poll'] * 4 + 3
+    online = time.time() - d['seen'] < offline_limit()
     return {'mac': d['mac'], 'label': d['label'], 'ip': d['ip'], 'online': online, 'on': d['on'],
             'h': round(d['h'] / 65535 * 360), 's': round(d['s'] / 65535 * 100),
             'b': round(d['b'] / 65535 * 100), 'k': d['k'],
@@ -764,6 +769,8 @@ class Handler(BaseHTTPRequestHandler):
                     s['poll'] = float(b['poll'])
                 if float(b.get('transition', -1)) >= 0:
                     s['transition'] = float(b['transition'])
+                if 'offline_after' in b:
+                    s['offline_after'] = None if b['offline_after'] in (None, '') else max(3.0, float(b['offline_after']))
             except (TypeError, ValueError):
                 pass
             try:

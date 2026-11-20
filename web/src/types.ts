@@ -95,6 +95,7 @@ export interface Settings {
   scan: string[];
   poll: number;
   transition: number;
+  offline_after: number | null;
   light_order: string[];
   lat: number | null;
   lon: number | null;

@@ -1,14 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../auth';
-import { useApp } from '../context';
 
 const item =
   'flex w-full cursor-pointer items-center gap-2 rounded-lg border-0 bg-transparent px-3 py-2 text-left text-[.9rem] text-ink no-underline hover:bg-soft';
 
 export function UserMenu() {
   const { user, signOut } = useAuth();
-  const { openSettings } = useApp();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -65,17 +63,9 @@ export function UserMenu() {
           <Link to="/profile" role="menuitem" className={item} onClick={() => setOpen(false)}>
             Profile
           </Link>
-          <button
-            type="button"
-            role="menuitem"
-            className={item}
-            onClick={() => {
-              setOpen(false);
-              openSettings();
-            }}
-          >
+          <Link to="/settings" role="menuitem" className={item} onClick={() => setOpen(false)}>
             Settings
-          </button>
+          </Link>
           <div className="my-1 h-px bg-line" />
           <button type="button" role="menuitem" className={item} onClick={() => void signOut()}>
             Sign out

@@ -1,9 +1,7 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { useApp } from '../context';
 import { Modal } from './ui';
 import { ScenesMenu } from './ScenesMenu';
-import { SettingsDialog } from './SettingsDialog';
 import { UserMenu } from './UserMenu';
 
 const links = [
@@ -17,7 +15,6 @@ const tabClass = ({ isActive }: { isActive: boolean }) =>
   }`;
 
 export function AppShell() {
-  const { openSettings } = useApp();
   const navigate = useNavigate();
   const [helpOpen, setHelpOpen] = useState(false);
 
@@ -31,11 +28,11 @@ export function AppShell() {
       else if (e.key === 'l') navigate('/');
       else if (e.key === 'd') navigate('/devices');
       else if (e.key === 'p') navigate('/profile');
-      else if (e.key === 's') openSettings();
+      else if (e.key === 's') navigate('/settings');
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [navigate, openSettings]);
+  }, [navigate]);
 
   return (
     <div className="min-h-dvh">
@@ -86,16 +83,11 @@ export function AppShell() {
         <NavLink to="/profile" className={tabClass}>
           Profile
         </NavLink>
-        <button
-          type="button"
-          onClick={openSettings}
-          className="flex flex-1 cursor-pointer flex-col items-center gap-0.5 border-0 bg-transparent py-2 text-[.78rem] font-medium text-mut"
-        >
+        <NavLink to="/settings" className={tabClass}>
           Settings
-        </button>
+        </NavLink>
       </nav>
 
-      <SettingsDialog />
       <ShortcutsDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
   );
