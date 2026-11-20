@@ -15,30 +15,54 @@ Current build: **1.0.1** (see `VERSION` at the top of `hl_lifx_control.py`). The
 | File | Purpose |
 |---|---|
 | `hl_lifx_control.py` | The service: LIFX protocol, discovery, light control, HTTP API |
-| `index.html` | The web UI (served at `/`); calls the API below |
+| `web/` | The web UI: a Vite + React + TypeScript app styled with Tailwind CSS. Calls the API below |
+| `index.html` | The original single-file UI. No longer served; kept for reference |
 | `CHANGELOG.md` | What changed in each release, and which files were updated |
 | `LICENSE` | MIT license |
 | `.gitignore` | Keeps `config.json` (your location, IPs, groups, schedules) out of git |
-| `config.json` | Created on first save: settings, groups and presets. Safe to back up or edit while the service is stopped |
+| `config.json` | Created on first save: settings, groups, presets, schedules and user accounts (passwords and PINs stored as salted hashes). Safe to back up while the service is stopped; don't share it |
 
 An older `data.json` is renamed to `config.json` automatically on startup if `config.json` doesn't exist yet.
 
 ## Running
 
+Build the web app once (needs Node.js 20.19 or newer):
+
 ```
+cd web
+npm install
+npm run build
+cd ..
 python3 hl_lifx_control.py
 ```
 
-Then open `http://<machine-ip>:8080`. Use another port with `PORT=9000 python3 hl_lifx_control.py`.
+Then open `http://<machine-ip>:8080`. Use another port with `PORT=9000 python3 hl_lifx_control.py`. Until `web/dist` exists, the service answers the page with a message telling you to run the build.
+
+### Developing the web app
+
+```
+cd web
+npm run dev
+```
+
+The Vite dev server (usually `http://localhost:5173`) proxies `/api` to `http://localhost:8080`, so keep `hl_lifx_control.py` running alongside it. `npm run lint` checks the code and `npm run build` type-checks and builds the production bundle.
+
+The web app has a sign-in page, a navigation bar, and these pages: Lights (the dashboard), Devices (a table of bulbs with status, address, and rename), and Profile (display name, theme and accent color, password, and PIN sign-in).
+
+## Accounts and sign-in
+
+The first run creates a development account with username `test` and password `test`. Change the password under Profile before exposing the service to anyone else. Each user can sign in with their password or, once set, a 4 to 8 digit PIN. Five failed attempts lock that username for one minute.
+
+Sessions are kept in memory, so restarting the service signs everyone out. This is a simple local login, not a full authentication system. Only use it on your own network.
 
 The machine must be on the same network (same subnet or VLAN) as the lights. Allow inbound UDP through the firewall (the lights reply to the service's UDP socket). Docker or WSL need host/bridged networking for broadcast discovery to work.
 
-There is **no authentication**. Anyone who can reach the port can control the lights. Do not expose it to the internet.
+Every `/api` call except sign-in requires a session cookie. Do not expose the port to the internet.
 
 ## How it works
 
 ```
-Browser (index.html) --HTTP/JSON--> hl_lifx_control.py --UDP :56700--> LIFX bulbs
+Browser (web/dist, React) --HTTP/JSON--> hl_lifx_control.py --UDP :56700--> LIFX bulbs
 ```
 
 ### Threads
@@ -348,15 +372,28 @@ curl -X PUT localhost:8080/api/settings -H 'Content-Type: application/json' -d '
 }'
 ```
 
+### `POST /api/auth/login`: sign in
+
+Send `{"username": "test", "password": "test"}` or `{"username": "test", "pin": "1234"}`. The reply sets a `lifx_session` cookie. `GET /api/auth/me` returns the signed-in user, and `POST /api/auth/logout` ends the session.
+
+### `PUT /api/account`: update the signed-in user
+
+Any of `name`, `theme` (`auto`, `light` or `dark`) and `accent` (`blue`, `teal`, `violet`, `amber` or `rose`). Changing the password (`newPassword`) or PIN (`pin`, or `""` to remove it) also requires `currentPassword`.
+
+### `PUT /api/light/<mac>/label`: rename a light
+
+`{"label": "Front porch"}`. Stores the name on the bulb itself.
+
 ### Responses and errors
 
 | Status | Meaning |
 |---|---|
 | 200 | Success (`{"ok": true}` for control/save calls) |
+| 401 | Not signed in (`{"ok": false, "error": "Not signed in"}`) |
 | 404 | Unknown API path (`{"error": "not found"}`) |
 | 500 | Server error or `config.json` couldn't be written: `{"ok": false, "error": "..."}`. Details are also printed in the service's terminal |
 
-`GET /` (or any non-`/api` path) returns `index.html`.
+`GET /` (or any non-`/api` path) returns the built React app from `web/dist`.
 
 ## Code map (`hl_lifx_control.py`)
 

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """hl_lifx_control: local LIFX controller. Speaks the LIFX LAN UDP protocol and serves a web UI + JSON API.
 Standard library only (Python 3.8+). See README.md."""
-import datetime as dt, ipaddress, json, math, mimetypes, os, random, socket, struct, threading, time
+import datetime as dt, hashlib, hmac, ipaddress, json, math, mimetypes, os, random, secrets, socket, struct, threading, time
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 VERSION = '1.0.1'  # bump on every release and add an entry to CHANGELOG.md
@@ -18,12 +19,13 @@ if not os.path.exists(DATA) and os.path.exists(_OLD):
     except OSError:
         pass
 
-db = {'settings': {'broadcast': '255.255.255.255', 'ips': [], 'poll': 3, 'transition': 0.5, 'scan': [], 'lat': None, 'lon': None, 'light_order': []}, 'groups': [], 'schedules': []}
+db = {'settings': {'broadcast': '255.255.255.255', 'ips': [], 'poll': 3, 'transition': 0.5, 'scan': [], 'lat': None, 'lon': None, 'light_order': []}, 'groups': [], 'schedules': [], 'users': []}
 try:
     with open(DATA) as f:
         _loaded = json.load(f)
     db['groups'] = _loaded.get('groups', [])
     db['schedules'] = _loaded.get('schedules', [])
+    db['users'] = _loaded.get('users', [])
     db['settings'].update(_loaded.get('settings', {}))
 except Exception:
     pass
@@ -39,6 +41,42 @@ sock.bind(('', 0))
 def save():
     with open(DATA, 'w') as f:
         json.dump(db, f, indent=2)
+
+
+PBKDF2_ROUNDS = 200_000
+SESSION_SECONDS = 30 * 24 * 3600
+sessions = {}  # token -> (user id, expiry time); lost on restart, so users sign in again
+attempts = {}  # username -> [failed count, locked until]
+
+
+def hash_secret(secret, salt=None):
+    salt = salt or secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac('sha256', secret.encode(), salt, PBKDF2_ROUNDS)
+    return {'salt': salt.hex(), 'hash': digest.hex()}
+
+
+def check_secret(secret, rec):
+    if not rec:
+        return False
+    digest = hashlib.pbkdf2_hmac('sha256', secret.encode(), bytes.fromhex(rec['salt']), PBKDF2_ROUNDS)
+    return hmac.compare_digest(digest.hex(), rec['hash'])
+
+
+def new_user(username, name, password):
+    return {'id': secrets.token_hex(6), 'username': username, 'name': name, 'theme': 'auto',
+            'password': hash_secret(password), 'pin': None}
+
+
+ACCENTS = ('blue', 'teal', 'violet', 'amber', 'rose')
+
+
+def public_user(u):
+    return {'id': u['id'], 'username': u['username'], 'name': u['name'], 'theme': u.get('theme', 'auto'),
+            'accent': u.get('accent', 'blue'), 'hasPin': bool(u.get('pin'))}
+
+
+if not db['users']:
+    db['users'].append(new_user('test', 'Test user', 'test'))  # development account until real authentication exists
 
 
 def packet(mtype, mac=None, payload=b''):
@@ -397,13 +435,95 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
-    def send_json(self, obj, code=200):
+    def send_json(self, obj, code=200, headers=()):
         data = json.dumps(obj).encode()
         self.send_response(code)
         self.send_header('Content-Type', 'application/json')
         self.send_header('Content-Length', str(len(data)))
+        for k, v in headers:
+            self.send_header(k, v)
         self.end_headers()
         self.wfile.write(data)
+
+    def session_token(self):
+        try:
+            morsel = SimpleCookie(self.headers.get('Cookie', '')).get('lifx_session')
+        except Exception:
+            return None
+        return morsel.value if morsel else None
+
+    def session_user(self):
+        token = self.session_token()
+        with lock:
+            s = sessions.get(token) if token else None
+        if not s or s[1] < time.time():
+            return None
+        return next((u for u in db['users'] if u['id'] == s[0]), None)
+
+    def login(self, b):
+        name = str(b.get('username', '')).strip()
+        user = next((u for u in db['users'] if u['username'] == name), None)
+        tries = attempts.setdefault(name, [0, 0.0])
+        if tries[1] > time.time():
+            return self.send_json({'ok': False, 'error': 'Too many attempts. Wait a minute and try again.'}, 429)
+        use_pin = 'pin' in b
+        secret = str(b.get('pin' if use_pin else 'password', ''))
+        ok = bool(user) and check_secret(secret, user['pin' if use_pin else 'password'])
+        if not ok:
+            tries[0] += 1
+            if tries[0] >= 5:
+                tries[:] = [0, time.time() + 60]
+            return self.send_json({'ok': False, 'error': 'Wrong username or ' + ('PIN' if use_pin else 'password')}, 401)
+        attempts.pop(name, None)
+        token = secrets.token_urlsafe(32)
+        with lock:
+            sessions[token] = (user['id'], time.time() + SESSION_SECONDS)
+        self.send_json({'ok': True, 'user': public_user(user)},
+                       headers=[('Set-Cookie', f'lifx_session={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={SESSION_SECONDS}')])
+
+    def auth_route(self, path, method, b):
+        if path == '/api/auth/login' and method == 'POST':
+            return self.login(b)
+        if path == '/api/auth/logout' and method == 'POST':
+            with lock:
+                sessions.pop(self.session_token(), None)
+            return self.send_json({'ok': True}, headers=[('Set-Cookie', 'lifx_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0')])
+        user = self.session_user()
+        if not user:
+            return self.send_json({'ok': False, 'error': 'Not signed in'}, 401)
+        if path == '/api/auth/me' and method == 'GET':
+            return self.send_json({'ok': True, 'user': public_user(user)})
+        self.send_json({'error': 'not found'}, 404)
+
+    def update_account(self, user, b):
+        name = str(b['name']).strip()[:40] if 'name' in b else user['name']
+        if not name:
+            return self.send_json({'ok': False, 'error': 'Name cannot be empty'}, 400)
+        theme = b.get('theme', user.get('theme', 'auto'))
+        if theme not in ('auto', 'light', 'dark'):
+            return self.send_json({'ok': False, 'error': 'Theme must be auto, light or dark'}, 400)
+        accent = b.get('accent', user.get('accent', 'blue'))
+        if accent not in ACCENTS:
+            return self.send_json({'ok': False, 'error': 'Unknown accent color'}, 400)
+        changes_secret = 'newPassword' in b or 'pin' in b
+        if changes_secret and not check_secret(str(b.get('currentPassword', '')), user['password']):
+            return self.send_json({'ok': False, 'error': 'Current password is wrong'}, 403)
+        new_pw = str(b['newPassword']) if 'newPassword' in b else None
+        if new_pw is not None and len(new_pw) < 4:
+            return self.send_json({'ok': False, 'error': 'Password must be at least 4 characters'}, 400)
+        pin = str(b['pin']).strip() if 'pin' in b else None
+        if pin and not (pin.isdigit() and 4 <= len(pin) <= 8):
+            return self.send_json({'ok': False, 'error': 'PIN must be 4 to 8 digits'}, 400)
+        user['name'], user['theme'], user['accent'] = name, theme, accent
+        if new_pw is not None:
+            user['password'] = hash_secret(new_pw)
+        if pin is not None:
+            user['pin'] = hash_secret(pin) if pin else None
+        try:
+            save()
+        except OSError as e:
+            return self.send_json({'ok': False, 'error': f'Could not write config.json: {e}'}, 500)
+        self.send_json({'ok': True, 'user': public_user(user)})
 
     def read_body(self):
         try:
@@ -449,6 +569,13 @@ class Handler(BaseHTTPRequestHandler):
         if not parts or parts[0] != 'api':
             return self.serve_web(path)
         b = {} if method == 'GET' else self.read_body()
+        if parts[1:2] == ['auth']:
+            return self.auth_route(path, method, b)
+        user = self.session_user()
+        if not user:
+            return self.send_json({'ok': False, 'error': 'Not signed in'}, 401)
+        if path == '/api/account' and method == 'PUT':
+            return self.update_account(user, b)
         if path == '/api/state':
             with lock:
                 lights = [view(d) for d in devices.values()]
@@ -456,6 +583,16 @@ class Handler(BaseHTTPRequestHandler):
                                    'schedules': [dict(s, next=next_fire(s)) for s in db['schedules']],
                                    'version': VERSION,
                                    'diag': {'local_ip': local_ip(db['settings']['broadcast']), 'replies': stats['replies']}})
+        if len(parts) == 4 and parts[1] == 'light' and parts[3] == 'label':
+            label = str(b.get('label', '')).strip().encode()[:32].decode('utf8', 'ignore')
+            if not label:
+                return self.send_json({'ok': False, 'error': 'Name cannot be empty'}, 400)
+            with lock:
+                d = devices.get(parts[2])
+                if d:
+                    d['label'] = label
+                    tx(packet(24, d['mac'], label.encode().ljust(32, b'\0')), d['ip'])
+            return self.send_json({'ok': bool(d)}, 200 if d else 404)
         if len(parts) == 3 and parts[1] == 'light':
             apply([parts[2]], b)
             return self.send_json({'ok': True})

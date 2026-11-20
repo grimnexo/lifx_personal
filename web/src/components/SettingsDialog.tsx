@@ -1,9 +1,8 @@
 import { useState } from 'react';
 import { useApp } from '../context';
 import { plural } from '../constants';
-import { effectiveTheme, getThemeMode, setThemeMode, type ThemeMode } from '../theme';
 import type { Group } from '../types';
-import { btn, btnPrimary, btnSmall, Fieldset, input, labelRow, Modal, Switch } from './ui';
+import { btnPrimary, btnSmall, Fieldset, input, labelRow, Modal, Switch } from './ui';
 
 export function SettingsDialog() {
   const { settingsOpen, closeSettings } = useApp();
@@ -28,7 +27,6 @@ function SettingsForm() {
   });
   const [msg, setMsg] = useState('');
   const [newGroup, setNewGroup] = useState('');
-  const [mode, setMode] = useState<ThemeMode>(getThemeMode());
   const field = (k: keyof typeof f) => (e: { target: { value: string } }) => setF((x) => ({ ...x, [k]: e.target.value }));
 
   const save = async () => {
@@ -77,36 +75,11 @@ function SettingsForm() {
     setNewGroup('');
   };
 
-  const setTheme = (m: ThemeMode) => {
-    setThemeMode(m);
-    setMode(m);
-  };
-
   return (
     <>
-      <div className="mb-3.5 flex flex-wrap items-center justify-between gap-2">
-        <h3 id="setTitle" className="text-[1.3rem] font-semibold">
-          Settings
-        </h3>
-        <div className="flex items-center gap-2">
-          <button
-            className={mode === 'auto' ? btnPrimary : btnSmall}
-            aria-pressed={mode === 'auto'}
-            title="Follow this device's light/dark setting"
-            onClick={() => setTheme('auto')}
-          >
-            Auto
-          </button>
-          <button
-            className={`${btn} size-[38px] p-0 text-[1.25rem]`}
-            title={effectiveTheme() === 'dark' ? 'Dark theme (click for light)' : 'Light theme (click for dark)'}
-            aria-label={effectiveTheme() === 'dark' ? 'Dark theme (click for light)' : 'Light theme (click for dark)'}
-            onClick={() => setTheme(effectiveTheme() === 'dark' ? 'light' : 'dark')}
-          >
-            {effectiveTheme() === 'dark' ? '\u{1F319}' : '\u2600\uFE0F'}
-          </button>
-        </div>
-      </div>
+      <h3 id="setTitle" className="mb-3.5 text-[1.3rem] font-semibold">
+        Settings
+      </h3>
 
       <Fieldset legend="Groups">
         {groups.map((g) => (

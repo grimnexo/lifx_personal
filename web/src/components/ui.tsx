@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
 
-export const btn =
-  'cursor-pointer rounded-full border border-line bg-card px-4 py-1.5 text-ink hover:border-acc focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc disabled:opacity-50';
-export const btnPrimary =
-  'cursor-pointer rounded-full border border-acc bg-acc px-4 py-1.5 text-bg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc disabled:opacity-50';
-export const btnSmall = `${btn} px-3 py-1 text-[.9rem]`;
+const focusRing = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acc';
+const base =
+  'inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border font-medium shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50';
+
+export const btn = `${base} ${focusRing} border-line bg-card px-3.5 py-2 text-[.9rem] text-ink hover:border-acc hover:text-acc`;
+export const btnPrimary = `${base} ${focusRing} border-acc bg-acc px-3.5 py-2 text-[.9rem] font-semibold text-on-acc hover:brightness-110`;
+export const btnDanger = `${base} ${focusRing} border-danger bg-danger px-3.5 py-2 text-[.9rem] font-semibold text-white hover:brightness-110`;
+export const btnSmall = `${base} ${focusRing} border-line bg-card px-2.5 py-1 text-[.8rem] text-ink hover:border-acc hover:text-acc`;
 export const input =
-  'w-full rounded-lg border border-line bg-bg px-2.5 py-1.5 text-ink focus-visible:outline-2 focus-visible:outline-acc';
-export const card = 'grid gap-2.5 rounded-2xl border border-line bg-card p-4';
+  'w-full rounded-lg border border-line bg-bg px-3 py-2 text-ink placeholder:text-mut focus-visible:outline-2 focus-visible:outline-acc';
+export const card = 'grid gap-2.5 rounded-[var(--radius)] border border-line bg-card p-4 shadow-card';
 export const titleBtn =
   'min-w-0 cursor-pointer whitespace-normal break-words border-0 bg-transparent p-0 text-left text-ink hover:underline';
 export const lnk = 'cursor-pointer border-0 bg-transparent p-0 text-[.8rem] text-mut hover:text-ink';
@@ -87,6 +90,79 @@ export function Fieldset({ legend, children }: { legend: string; children: React
       <legend className="px-1.5 font-semibold">{legend}</legend>
       {children}
     </fieldset>
+  );
+}
+
+export function PageTitle({ title, subtitle, children }: { title: string; subtitle?: ReactNode; children?: ReactNode }) {
+  return (
+    <header className="mb-6 flex flex-wrap items-end justify-between gap-3">
+      <div className="min-w-0">
+        <h1 className="text-[1.9rem] leading-tight font-bold tracking-tight">{title}</h1>
+        {subtitle && <p className="m-0 mt-1 text-mut">{subtitle}</p>}
+      </div>
+      {children && <div className="flex flex-wrap gap-2">{children}</div>}
+    </header>
+  );
+}
+
+const badgeTones = {
+  ok: 'bg-ok/15 text-ok',
+  warn: 'bg-warn/15 text-warn',
+  danger: 'bg-danger/15 text-danger',
+  off: 'bg-soft text-mut',
+} as const;
+
+export function Badge({ tone, children }: { tone: keyof typeof badgeTones; children: ReactNode }) {
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[.8rem] font-medium ${badgeTones[tone]}`}>
+      <i className="size-1.5 rounded-full bg-current" />
+      {children}
+    </span>
+  );
+}
+
+export function Alert({
+  title,
+  tone = 'danger',
+  onDismiss,
+  children,
+}: {
+  title?: string;
+  tone?: 'danger' | 'info' | 'ok';
+  onDismiss?: () => void;
+  children: ReactNode;
+}) {
+  const palette = {
+    danger: 'border-danger/40 bg-danger/10 text-danger',
+    info: 'border-acc/40 bg-acc/10 text-acc',
+    ok: 'border-ok/40 bg-ok/10 text-ok',
+  }[tone];
+  return (
+    <div role={tone === 'danger' ? 'alert' : 'status'} className={`flex items-start justify-between gap-3 rounded-[var(--radius)] border px-4 py-3 text-[.9rem] leading-snug ${palette}`}>
+      <div className="min-w-0 text-ink">
+        {title && <strong className={`mb-0.5 block text-base ${palette.split(' ').at(-1)}`}>{title}</strong>}
+        {children}
+      </div>
+      {onDismiss && (
+        <button
+          aria-label="Dismiss"
+          className="flex-none cursor-pointer rounded-md border-0 bg-transparent px-1.5 text-2xl leading-none text-mut hover:bg-soft"
+          onClick={onDismiss}
+        >
+          &times;
+        </button>
+      )}
+    </div>
+  );
+}
+
+export function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+  return (
+    <label className="grid gap-1.5 text-[.9rem] font-medium">
+      {label}
+      {children}
+      {hint && <small className="font-normal text-mut">{hint}</small>}
+    </label>
   );
 }
 

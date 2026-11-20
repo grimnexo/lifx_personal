@@ -12,6 +12,7 @@ export async function api<T extends object = {}>(
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: method === 'GET' ? AbortSignal.timeout(6000) : undefined,
     });
+    if (r.status === 401 && !path.startsWith('auth/login')) window.dispatchEvent(new Event('lifx:signed-out'));
     try {
       return (await r.json()) as ApiResult & Partial<T>;
     } catch {

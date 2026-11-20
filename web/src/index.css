@@ -1,35 +1,64 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #e3e8ee;
-  --ink: #17222d;
-  --mut: #5d6b78;
-  --card: #fff;
-  --line: #cfd7df;
-  --acc: #2b5d8a;
+  --bg: #f1f4f8;
+  --ink: #141c26;
+  --mut: #5b6876;
+  --card: #ffffff;
+  --soft: #e8edf3;
+  --line: #d5dde6;
+  --acc: #2563eb;
+  --on-acc: #ffffff;
+  --ok: #15803d;
+  --warn: #b45309;
+  --danger: #b42318;
   --ipc: #8f9aa6;
+  --shadow: 0 1px 2px rgb(15 23 42 / 0.06), 0 4px 14px rgb(15 23 42 / 0.05);
+  --radius: 14px;
   color-scheme: light;
 }
 
 :root[data-theme="dark"] {
-  --bg: #141b22;
-  --ink: #e6ecf2;
-  --mut: #93a1ae;
-  --card: #1e2830;
-  --line: #2f3b46;
+  --bg: #0f151c;
+  --ink: #e7edf3;
+  --mut: #94a3b1;
+  --card: #18212b;
+  --soft: #202b36;
+  --line: #2c3947;
   --acc: #7fb3e0;
+  --on-acc: #0f151c;
+  --ok: #4ade80;
+  --warn: #fbbf24;
+  --danger: #f87171;
   --ipc: #8996a3;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 6px 20px rgb(0 0 0 / 0.25);
   color-scheme: dark;
 }
+
+:root[data-accent="teal"] { --acc: #0f766e; }
+:root[data-accent="violet"] { --acc: #6d4bd6; }
+:root[data-accent="amber"] { --acc: #b7791f; }
+:root[data-accent="rose"] { --acc: #be3455; }
+:root[data-theme="dark"][data-accent="teal"] { --acc: #5eead4; }
+:root[data-theme="dark"][data-accent="violet"] { --acc: #c4b5fd; }
+:root[data-theme="dark"][data-accent="amber"] { --acc: #fcd34d; }
+:root[data-theme="dark"][data-accent="rose"] { --acc: #fda4af; }
 
 @theme inline {
   --color-bg: var(--bg);
   --color-ink: var(--ink);
   --color-mut: var(--mut);
   --color-card: var(--card);
+  --color-soft: var(--soft);
   --color-line: var(--line);
   --color-acc: var(--acc);
+  --color-on-acc: var(--on-acc);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
   --color-ipc: var(--ipc);
+  --shadow-card: var(--shadow);
+  --font-sans: ui-rounded, "Avenir Next", "Segoe UI", system-ui, sans-serif;
 }
 
 @layer base {
@@ -37,10 +66,15 @@
     margin: 0;
     background: var(--bg);
     color: var(--ink);
-    font: 16px/1.4 ui-rounded, "Avenir Next", system-ui, sans-serif;
+    font: 16px/1.45 var(--font-sans);
+    -webkit-font-smoothing: antialiased;
   }
   input[type="range"] {
     accent-color: var(--acc);
+  }
+  :focus-visible {
+    outline: 2px solid var(--acc);
+    outline-offset: 2px;
   }
 }
 
