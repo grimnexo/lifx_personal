@@ -1,14 +1,25 @@
 import type { ApiResult } from './types';
 
+const TOKEN_KEY = 'lifx_session_token';
+
+export function setSessionToken(token: string | null) {
+  if (token) sessionStorage.setItem(TOKEN_KEY, token);
+  else sessionStorage.removeItem(TOKEN_KEY);
+}
+
 export async function api<T extends object = {}>(
   path: string,
   method: 'GET' | 'POST' | 'PUT' = 'POST',
   body?: unknown,
 ): Promise<ApiResult & Partial<T>> {
+  const token = sessionStorage.getItem(TOKEN_KEY);
   try {
     const r = await fetch('/api/' + path, {
       method,
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: method === 'GET' ? AbortSignal.timeout(6000) : undefined,
     });

@@ -446,6 +446,9 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def session_token(self):
+        auth = self.headers.get('Authorization', '')
+        if auth.startswith('Bearer '):
+            return auth[7:]
         try:
             morsel = SimpleCookie(self.headers.get('Cookie', '')).get('lifx_session')
         except Exception:
@@ -478,7 +481,7 @@ class Handler(BaseHTTPRequestHandler):
         token = secrets.token_urlsafe(32)
         with lock:
             sessions[token] = (user['id'], time.time() + SESSION_SECONDS)
-        self.send_json({'ok': True, 'user': public_user(user)},
+        self.send_json({'ok': True, 'user': public_user(user), 'token': token},
                        headers=[('Set-Cookie', f'lifx_session={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={SESSION_SECONDS}')])
 
     def auth_route(self, path, method, b):

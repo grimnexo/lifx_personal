@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import { api } from './api';
+import { api, setSessionToken } from './api';
 import { setAccent, setThemeMode, type Accent, type ThemeMode } from './theme';
 import type { ApiResult } from './types';
 
@@ -60,14 +60,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ready,
       async signIn(username, secret, method) {
         const body = method === 'pin' ? { username, pin: secret } : { username, password: secret };
-        const r = await api<{ user: User }>('auth/login', 'POST', body);
+        const r = await api<{ user: User; token: string }>('auth/login', 'POST', body);
         if (!r.user) return r.error ?? 'Sign in failed.';
+        setSessionToken(r.token ?? null);
         applyUserAppearance(r.user);
         setUser(r.user);
         return null;
       },
       async signOut() {
         await api('auth/logout', 'POST');
+        setSessionToken(null);
         setUser(null);
       },
       async saveAccount(body) {
