@@ -16,7 +16,6 @@ const sections: { to: string; label: string; end: boolean; icon: IconName }[] = 
   { to: '/rooms', label: 'Rooms', end: false, icon: 'rooms' },
   { to: '/groups', label: 'Groups', end: false, icon: 'groups' },
   { to: '/schedules', label: 'Schedules', end: false, icon: 'schedules' },
-  { to: '/devices', label: 'Devices', end: false, icon: 'devices' },
 ];
 
 const mobileTabs = [
@@ -28,7 +27,6 @@ const mobileTabs = [
 
 const moreLinks = [
   { to: '/groups', label: 'Groups' },
-  { to: '/devices', label: 'Devices' },
   { to: '/profile', label: 'Profile' },
   { to: '/settings', label: 'Settings' },
 ];

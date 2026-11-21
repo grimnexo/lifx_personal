@@ -27,9 +27,20 @@ export function RoomsDialog({ open, onClose }: { open: boolean; onClose: () => v
 
   return (
     <Modal open={open} onClose={onClose} labelledBy="roomsTitle">
-      <h2 id="roomsTitle" className="m-0 mb-1 text-xl font-semibold">
-        Rooms
-      </h2>
+      <div className="mb-1 flex items-start justify-between gap-3">
+        <h2 id="roomsTitle" className="m-0 text-xl font-semibold">
+          Rooms
+        </h2>
+        <button
+          type="button"
+          aria-label="Close rooms"
+          title="Close"
+          className="grid size-8 flex-none cursor-pointer place-items-center rounded-lg border-0 bg-transparent text-2xl leading-none text-mut hover:bg-soft hover:text-ink"
+          onClick={onClose}
+        >
+          &times;
+        </button>
+      </div>
       <p className="m-0 mb-4 text-[.9rem] text-mut">Group lights by room. A light belongs to one room at a time.</p>
 
       <form
