@@ -4,6 +4,15 @@ Each release lists what changed and which files were updated. Newest first.
 
 Versions use `MAJOR.MINOR.PATCH`: MAJOR for changes that break `config.json` or the API, MINOR for new features, PATCH for fixes. The version is set in `hl_lifx_control.py` (`VERSION`) and shown in Settings.
 
+## 1.1.0 - 2026-11-20
+
+### Added
+- Interactive native/Docker installer (`manage.sh`), Compose image, administrator bootstrap, SQLite backups, update and runtime controls, installation guide, and CI smoke tests.
+- Configurable data directory for containers; native storage remains unchanged.
+- Wrapper-managed startup requires account initialization rather than creating the default development login.
+
+**Files updated:** `hl_lifx_control.py`, `README.md`, `.gitignore`, `CHANGELOG.md`; new deployment and testing files.
+
 ## 1.0.1 - 2026-11-19
 
 Repository setup. No change to how the service or page behaves.
