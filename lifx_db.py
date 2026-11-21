@@ -3,7 +3,7 @@
 Standard library only. The database file is lifx.db beside hl_lifx_control.py."""
 import hashlib, json, sqlite3, threading, time
 
-LIST_KEYS = ('groups', 'schedules', 'rooms', 'scenes', 'favorites')
+LIST_KEYS = ('groups', 'schedules', 'rooms', 'scenes', 'favorites', 'patterns')
 DATA_KEYS = ('settings',) + LIST_KEYS
 
 SCHEMA = """

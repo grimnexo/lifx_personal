@@ -47,6 +47,12 @@ export function hueSat(hx: string): [number, number] {
   return rgb2hs(r, g, b);
 }
 
+export function hexToHsb(hx: string): { h: number; s: number; b: number } {
+  const rgb = fromHex(hx);
+  const [h, s] = rgb2hs(...rgb);
+  return { h, s, b: Math.round((Math.max(...rgb) / 255) * 100) };
+}
+
 export function colorRgb(c: { h: number; s: number; k: number }): RGB {
   return c.s > 0 ? hsb2rgb(c.h, c.s, 100) : kRgb(c.k);
 }

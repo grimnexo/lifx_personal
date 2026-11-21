@@ -12,7 +12,7 @@ export interface Light {
   s: number;
   b: number;
   k: number;
-  fx: FxKind | null;
+  fx: FxKind | 'pattern' | null;
 }
 
 export interface LightSnap {
@@ -28,6 +28,20 @@ export interface Preset {
   id: string;
   name: string;
   lights: Record<string, LightSnap>;
+}
+
+export interface PatternStep {
+  h: number;
+  s: number;
+  b: number;
+  k: number;
+  seconds: number;
+}
+
+export interface Pattern {
+  id: string;
+  name: string;
+  steps: PatternStep[];
 }
 
 export interface Group {
@@ -61,10 +75,16 @@ export interface Room {
   lights: string[];
 }
 
+export interface ScenePattern {
+  pattern: string;
+  lights: string[];
+}
+
 export interface Scene {
   id: string;
   name: string;
   lights: Record<string, Omit<LightSnap, 'label'>>;
+  patterns: ScenePattern[];
 }
 
 export interface Favorite {
@@ -117,6 +137,7 @@ export interface AppState {
   schedules: Schedule[];
   rooms: Room[];
   scenes: Scene[];
+  patterns: Pattern[];
   favorites: Favorite[];
   sun: Sun | null;
   settings: Settings;
