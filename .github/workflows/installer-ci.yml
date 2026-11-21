@@ -1,9 +1,9 @@
 name: Installer checks
 on:
   push:
-    paths: [manage.sh, scripts/**, tests/**, Dockerfile, compose.yaml, .dockerignore, hl_lifx_control.py, lifx_db.py]
+    paths: [manage.sh, scripts/**, tests/**, Dockerfile, compose.yaml, .dockerignore, .gitattributes, .editorconfig, hl_lifx_control.py, lifx_db.py]
   pull_request:
-    paths: [manage.sh, scripts/**, tests/**, Dockerfile, compose.yaml, .dockerignore, hl_lifx_control.py, lifx_db.py]
+    paths: [manage.sh, scripts/**, tests/**, Dockerfile, compose.yaml, .dockerignore, .gitattributes, .editorconfig, hl_lifx_control.py, lifx_db.py]
 jobs:
   test:
     runs-on: ubuntu-latest
