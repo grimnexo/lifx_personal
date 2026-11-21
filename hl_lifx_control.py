@@ -6,14 +6,16 @@ from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from lifx_db import DATA_KEYS, LIST_KEYS, Store
 
-VERSION = '1.0.1'  # bump on every release and add an entry to CHANGELOG.md
+VERSION = '1.1.0'  # bump on every release and add an entry to CHANGELOG.md
 PORT = int(os.environ.get('PORT', 8080))
 LIFX = 56700
 SRC = 0x4C494658
 HERE = os.path.dirname(os.path.abspath(__file__))
 DIST = os.path.join(HERE, 'web', 'dist')  # built by `npm run build` in web/
-DB_FILE = os.path.join(HERE, 'lifx.db')
-LEGACY_FILES = (os.path.join(HERE, 'config.json'), os.path.join(HERE, 'data.json'))  # JSON config from earlier versions
+DATA_DIR = os.path.abspath(os.environ.get('LIFX_DATA_DIR') or HERE)
+os.makedirs(DATA_DIR, exist_ok=True)
+DB_FILE = os.path.join(DATA_DIR, 'lifx.db')
+LEGACY_FILES = (os.path.join(DATA_DIR, 'config.json'), os.path.join(DATA_DIR, 'data.json'))  # JSON config from earlier versions
 
 
 def read_legacy():
@@ -148,7 +150,9 @@ def public_user(u):
 
 
 if store.user_count() == 0:
-    store.insert_user(new_user('test', 'Test user', 'test'))  # development account until real authentication exists
+    if os.environ.get('LIFX_REQUIRE_ADMIN') == '1':
+        raise SystemExit('No accounts exist. Run ./manage.sh install to create an administrator first.')
+    store.insert_user(new_user('test', 'Test user', 'test'))  # legacy direct-start development behavior
 
 
 def packet(mtype, mac=None, payload=b''):
