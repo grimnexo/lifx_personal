@@ -1,0 +1,11 @@
+.git
+.lifx
+*.db
+*.db-*
+config.json
+data.json
+web/node_modules
+web/dist
+web/.vite
+__pycache__
+*.pyc
