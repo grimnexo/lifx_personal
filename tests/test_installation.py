@@ -66,13 +66,13 @@ class InstallationTests(unittest.TestCase):
                 state.mkdir()
                 (state / 'port').write_text(corrupt)
                 command = subprocess.run(['bash', str(root / 'manage.sh'), 'port'],
-                                         input='9000\\n', capture_output=True, text=True)
+                                         input='9000\n', capture_output=True, text=True)
                 self.assertEqual(command.returncode, 0, command.stderr)
                 self.assertEqual((state / 'port').read_text().strip(), '9000')
 
                 (state / 'port').write_text(corrupt)
                 menu = subprocess.run(['bash', str(root / 'manage.sh')],
-                                      input='8\\n9001\\n0\\n', capture_output=True, text=True)
+                                      input='8\n9001\n0\n', capture_output=True, text=True)
                 self.assertEqual(menu.returncode, 0, menu.stderr)
                 self.assertIn('invalid (choose option 8 to repair)', menu.stdout)
                 self.assertEqual((state / 'port').read_text().strip(), '9001')
@@ -83,7 +83,7 @@ class InstallationTests(unittest.TestCase):
             shutil.copy(ROOT / 'manage.sh', root / 'manage.sh')
             state = root / '.lifx'
             state.mkdir()
-            (state / 'mode').write_text('native\\n')
+            (state / 'mode').write_text('native\n')
             (state / 'port').write_text('not-a-port')
             result = subprocess.run(['bash', str(root / 'manage.sh'), 'status'],
                                     capture_output=True, text=True)
@@ -127,7 +127,7 @@ esac
                 (root / '.git').mkdir()
                 state = root / '.lifx'
                 state.mkdir()
-                (state / 'mode').write_text('docker\\n')
+                (state / 'mode').write_text('docker\n')
                 bindir = root / 'bin'
                 bindir.mkdir()
                 for executable, code in (('docker', docker_stub), ('git', git_stub)):
