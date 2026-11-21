@@ -91,9 +91,10 @@ check_docker() {
   docker info >/dev/null 2>&1 || fail 'Docker daemon is unavailable or this user lacks Docker access.'
 }
 compose() {
-  local uid gid
+  local uid gid current_port
   uid="$(id -u)"; gid="$(id -g)"
-  (cd "$ROOT" && PORT="$(port)" LIFX_UID="$uid" LIFX_GID="$gid" \
+  current_port="$(port)"
+  (cd "$ROOT" && PORT="$current_port" LIFX_UID="$uid" LIFX_GID="$gid" \
     docker compose -f "$COMPOSE_FILE" -p lifx-personal "$@")
 }
 native_pid() {
@@ -127,13 +128,14 @@ native_stop() {
 native_start() {
   check_python
   [[ -d "$ROOT/web/dist" ]] || fail 'Missing web/dist. Run ./manage.sh install native first.'
-  local pid
+  local pid current_port
+  current_port="$(port)"
   if pid="$(native_pid)"; then info "Native service already running (PID $pid)."; return; fi
   ensure_state
   rm -f -- "$PID_FILE"
   (
     cd "$ROOT"
-    nohup env PYTHONUNBUFFERED=1 LIFX_REQUIRE_ADMIN=1 PORT="$(port)" \
+    nohup env PYTHONUNBUFFERED=1 LIFX_REQUIRE_ADMIN=1 PORT="$current_port" \
       python3 "$ROOT/hl_lifx_control.py" >>"$LOG_FILE" 2>&1 </dev/null &
     echo $! > "$PID_FILE"
   )
@@ -209,7 +211,9 @@ stop() {
 restart() { stop; start; }
 status() {
   require_mode
-  info "Mode: $(mode) | Port: $(port) | Database: $DB_FILE"
+  local current_port
+  current_port="$(port)"
+  info "Mode: $(mode) | Port: $current_port | Database: $DB_FILE"
   if [[ "$(mode)" == native ]]; then
     local pid
     if pid="$(native_pid)"; then info "Running (PID $pid)"; else info 'Not running under the wrapper'; fi
