@@ -124,6 +124,8 @@ export interface Settings {
   light_order: string[];
   lat: number | null;
   lon: number | null;
+  warm_presets: number[];
+  favorite_colors: string[];
 }
 
 export interface Diag {

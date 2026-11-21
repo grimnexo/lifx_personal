@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """hl_lifx_control: local LIFX controller. Speaks the LIFX LAN UDP protocol and serves a web UI + JSON API.
 Standard library only (Python 3.8+). See README.md."""
-import datetime as dt, hashlib, hmac, ipaddress, json, math, mimetypes, os, random, secrets, socket, sqlite3, struct, threading, time
+import datetime as dt, hashlib, hmac, ipaddress, json, math, mimetypes, os, random, re, secrets, socket, sqlite3, struct, threading, time
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from lifx_db import DATA_KEYS, LIST_KEYS, Store
@@ -52,7 +52,9 @@ def clean_light_ips(items):
     return out
 
 
-db = {'settings': {'broadcast': '255.255.255.255', 'ips': [], 'poll': 3, 'transition': 0.5, 'scan': [], 'lat': None, 'lon': None, 'light_order': [], 'offline_after': None}}
+DEFAULT_WARM_PRESETS = [2000, 2700, 3500, 4000, 5000, 6500]
+db = {'settings': {'broadcast': '255.255.255.255', 'ips': [], 'poll': 3, 'transition': 0.5, 'scan': [], 'lat': None, 'lon': None, 'light_order': [], 'offline_after': None,
+                   'warm_presets': DEFAULT_WARM_PRESETS, 'favorite_colors': []}}
 db['settings'].update(store.get_data('settings', {}))
 db['settings']['ips'] = clean_light_ips(db['settings']['ips'])
 for _key in LIST_KEYS:
@@ -117,6 +119,16 @@ def clean_scenes(lst):
                 if isinstance(r, dict) and r.get('pattern')]
         out.append({'id': str(s['id']), 'name': str(s.get('name', '')).strip()[:40] or 'Scene', 'lights': lights, 'patterns': runs})
     return out
+
+
+def clean_kelvin(lst):
+    out = set()
+    for x in lst:
+        try:
+            out.add(max(1500, min(9000, int(float(x)))))
+        except (TypeError, ValueError):
+            pass
+    return sorted(out)
 
 
 def clean_favorites(lst):
@@ -898,6 +910,11 @@ class Handler(BaseHTTPRequestHandler):
                     s['offline_after'] = None if b['offline_after'] in (None, '') else max(3.0, float(b['offline_after']))
             except (TypeError, ValueError):
                 pass
+            if isinstance(b.get('warm_presets'), list):
+                s['warm_presets'] = clean_kelvin(b['warm_presets'])
+            if isinstance(b.get('favorite_colors'), list):
+                s['favorite_colors'] = [str(x).lower() for x in b['favorite_colors']
+                                        if re.fullmatch(r'#[0-9a-fA-F]{6}', str(x))]
             try:
                 save()
             except sqlite3.Error as e:

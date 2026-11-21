@@ -4,7 +4,7 @@ import { plural } from '../constants';
 import { APP_ICONS, APP_ICON_LABELS, DEFAULT_LABEL, LABEL_MAX, brandLabel, iconFromFile, updateBranding, useBranding, type AppIcon } from '../branding';
 import { BrandTile } from '../components/BrandTile';
 import type { Group, LightIp, Settings } from '../types';
-import { Field, PageTitle, Switch, btnPrimary, btnSmall, card, input } from '../components/ui';
+import { Field, PageTitle, Switch, btnPrimary, btnSmall, card, input, lnk } from '../components/ui';
 
 interface Form {
   broadcast: string;
@@ -14,7 +14,11 @@ interface Form {
   fade: string;
   lat: string;
   lon: string;
+  warm: number[];
+  colors: string[];
 }
+
+type TextKey = Exclude<keyof Form, 'warm' | 'colors'>;
 
 interface Msg {
   ok: boolean;
@@ -57,6 +61,8 @@ const toForm = (s: Settings): Form => ({
   fade: String(s.transition),
   lat: s.lat == null ? '' : String(s.lat),
   lon: s.lon == null ? '' : String(s.lon),
+  warm: s.warm_presets,
+  colors: s.favorite_colors,
 });
 
 const list = (s: string) =>
@@ -91,7 +97,7 @@ function SettingsForm() {
   const [customBroadcast, setCustomBroadcast] = useState(() => isCustomBroadcast(settings.broadcast));
   const dirty = JSON.stringify(f) !== JSON.stringify(saved);
 
-  const field = (k: keyof Form) => (e: ChangeEvent<HTMLInputElement>) => setF((x) => ({ ...x, [k]: e.target.value }));
+  const field = (k: TextKey) => (e: ChangeEvent<HTMLInputElement>) => setF((x) => ({ ...x, [k]: e.target.value }));
 
   const chooseBroadcast = (e: ChangeEvent<HTMLSelectElement>) => {
     if (e.target.value === 'custom') return setCustomBroadcast(true);
@@ -119,6 +125,8 @@ function SettingsForm() {
       transition: +f.fade,
       lat: f.lat.trim() ? +f.lat : null,
       lon: f.lon.trim() ? +f.lon : null,
+      warm_presets: f.warm,
+      favorite_colors: f.colors,
     });
     if (!r.ok) return setMsg({ ok: false, text: r.error ?? 'Could not save settings.' });
     setSaved(f);
@@ -230,6 +238,12 @@ function SettingsForm() {
               <Field label="Fade time when changing (seconds)" hint="How long lights take to move to a new color or brightness. 0 is instant.">
                 <input type="number" min={0} step={0.1} className={input} value={f.fade} onChange={field('fade')} />
               </Field>
+              <Field label="Warmth presets" hint="White light options shown in the Scenes menu, from 1500 K (candle) to 9000 K (cool daylight).">
+                <WarmPresetEditor values={f.warm} onChange={(warm) => setF((x) => ({ ...x, warm }))} />
+              </Field>
+              <Field label="Favorite colors" hint="Colors you use often. They appear as swatches in the Scenes menu.">
+                <FavoriteColorEditor values={f.colors} onChange={(colors) => setF((x) => ({ ...x, colors }))} />
+              </Field>
             </section>
           )}
 
@@ -286,6 +300,88 @@ function SettingsForm() {
         </div>
       </form>
     </>
+  );
+}
+
+function WarmPresetEditor({ values, onChange }: { values: number[]; onChange: (v: number[]) => void }) {
+  const [draft, setDraft] = useState('');
+  const k = Number(draft);
+  const valid = draft.trim() !== '' && Number.isInteger(k) && k >= 1500 && k <= 9000 && !values.includes(k);
+  const add = () => {
+    if (valid) onChange([...values, k].sort((a, b) => a - b));
+    setDraft('');
+  };
+  return (
+    <div className="grid gap-2">
+      <div className="flex flex-wrap gap-1.5">
+        {values.length === 0 && <small className="text-mut">No warmth presets.</small>}
+        {values.map((v) => (
+          <span key={v} className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-soft px-2.5 py-1 text-[.85rem] tabular-nums">
+            {v} K
+            <button type="button" className={lnk} aria-label={`Remove ${v} K`} onClick={() => onChange(values.filter((x) => x !== v))}>
+              &times;
+            </button>
+          </span>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        <input
+          type="number"
+          min={1500}
+          max={9000}
+          step={50}
+          className={`${input} max-w-40`}
+          placeholder="e.g. 2700"
+          aria-label="New warmth in kelvin"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              add();
+            }
+          }}
+        />
+        <button type="button" className={btnSmall} disabled={!valid} onClick={add}>
+          Add warmth
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function FavoriteColorEditor({ values, onChange }: { values: string[]; onChange: (v: string[]) => void }) {
+  const [draft, setDraft] = useState('#ff8800');
+  const add = () => {
+    if (!values.includes(draft)) onChange([...values, draft]);
+  };
+  return (
+    <div className="grid gap-2">
+      <div className="flex flex-wrap gap-2">
+        {values.length === 0 && <small className="text-mut">No favorite colors.</small>}
+        {values.map((hex) => (
+          <span key={hex} className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-soft px-2 py-1 text-[.85rem]">
+            <span aria-hidden="true" className="size-4 rounded-full border border-line" style={{ backgroundColor: hex }} />
+            <span className="tabular-nums">{hex}</span>
+            <button type="button" className={lnk} aria-label={`Remove ${hex}`} onClick={() => onChange(values.filter((x) => x !== hex))}>
+              &times;
+            </button>
+          </span>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        <input
+          type="color"
+          aria-label="New favorite color"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          className="h-9 w-14 cursor-pointer rounded-lg border border-line bg-transparent p-0.5"
+        />
+        <button type="button" className={btnSmall} disabled={values.includes(draft)} onClick={add}>
+          Add color
+        </button>
+      </div>
+    </div>
   );
 }
 

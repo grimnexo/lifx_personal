@@ -54,6 +54,7 @@ export interface AppCtx {
   setGroupLights(g: Group, local: Partial<Light>, body: Body, now?: boolean): void;
   powerGroup(g: Group, on: boolean): void;
   powerAll(on: boolean): void;
+  applyToAll(body: Body, local: Partial<Light>): void;
   startEffect(target: string, macs: string[], kind: FxKind): void;
   stopEffect(target: string, macs: string[]): void;
   startPattern(macs: string[], p: Pattern): void;
@@ -98,6 +99,8 @@ const DEFAULT_SETTINGS: Settings = {
   offline_after: null,
   lat: null,
   lon: null,
+  warm_presets: [2000, 2700, 3500, 4000, 5000, 6500],
+  favorite_colors: [],
 };
 
 const mobileQuery = matchMedia('(max-width:700px), (pointer:coarse)');
@@ -264,6 +267,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     markEdit();
     setData((d) => ({ ...d, lights: d.lights.map((l) => ({ ...l, on })) }));
     void api('all', 'POST', { power: on });
+  }
+
+  function applyToAll(body: Body, local: Partial<Light>) {
+    markEdit();
+    updateLights((l) => l.online, local);
+    void api('all', 'POST', body);
   }
 
   function startEffect(target: string, macs: string[], kind: FxKind) {
@@ -450,6 +459,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setGroupLights,
     powerGroup,
     powerAll,
+    applyToAll,
     startEffect,
     stopEffect,
     startPattern,

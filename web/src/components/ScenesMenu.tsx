@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { hexToHsb } from '../color';
 import { useApp } from '../context';
 import type { Scene } from '../types';
 import { Icon } from './icons';
@@ -8,6 +9,8 @@ import { btn, btnPrimary, btnSmall, input } from './ui';
 
 const row = 'flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-[.9rem] text-ink hover:bg-soft';
 
+const sceneLightCount = (s: Scene) => new Set([...Object.keys(s.lights), ...s.patterns.flatMap((p) => p.lights)]).size;
+
 interface MenuPlacement {
   align?: 'left' | 'right';
   drop?: 'up' | 'down';
@@ -16,7 +19,7 @@ interface MenuPlacement {
 }
 
 export function ScenesMenu({ align = 'right', drop = 'down', block = false, compact = false }: MenuPlacement) {
-  const { scenes, lights, recallScene, captureScene, updateScenes, ask } = useApp();
+  const { scenes, lights, settings, recallScene, captureScene, applyToAll } = useApp();
   const [open, setOpen] = useState(false);
   const [naming, setNaming] = useState(false);
   const [name, setName] = useState('');
@@ -98,7 +101,7 @@ export function ScenesMenu({ align = 'right', drop = 'down', block = false, comp
                 }}
               >
                 <span className="truncate">{s.name}</span>
-                <span className="flex-none text-[.8rem] text-mut">{Object.keys(s.lights).length} lights</span>
+                <span className="flex-none text-[.8rem] text-mut">{sceneLightCount(s)} lights</span>
               </button>
               <button
                 type="button"
@@ -111,18 +114,48 @@ export function ScenesMenu({ align = 'right', drop = 'down', block = false, comp
               >
                 Edit
               </button>
-              <button
-                type="button"
-                aria-label={`Delete scene ${s.name}`}
-                className="cursor-pointer rounded-lg border-0 bg-transparent px-2 py-1 text-mut hover:bg-soft hover:text-danger"
-                onClick={() =>
-                  ask(`Delete the scene "${s.name}"?`, 'Delete', () => updateScenes(scenes.filter((x) => x.id !== s.id)))
-                }
-              >
-                &times;
-              </button>
             </div>
           ))}
+          {(settings.warm_presets.length > 0 || settings.favorite_colors.length > 0) && (
+            <>
+              <div className="my-1 h-px bg-line" />
+              <p className="m-0 px-3 pt-1 text-[.8rem] text-mut">Quick colors for all lights</p>
+              <div className="flex flex-wrap items-center gap-1.5 px-3 pb-1">
+                {settings.warm_presets.map((k) => (
+                  <button
+                    key={k}
+                    type="button"
+                    className={btnSmall}
+                    disabled={onlineCount === 0}
+                    onClick={() => {
+                      applyToAll({ power: true, s: 0, k }, { on: true, s: 0, k, fx: null });
+                      setOpen(false);
+                    }}
+                  >
+                    {k} K
+                  </button>
+                ))}
+                {settings.favorite_colors.map((hex) => {
+                  const { h, s, b } = hexToHsb(hex);
+                  return (
+                    <button
+                      key={hex}
+                      type="button"
+                      aria-label={`Favorite color ${hex}`}
+                      title={hex}
+                      disabled={onlineCount === 0}
+                      style={{ backgroundColor: hex }}
+                      className="size-6 cursor-pointer rounded-full border border-line p-0 disabled:cursor-not-allowed disabled:opacity-40"
+                      onClick={() => {
+                        applyToAll({ power: true, h, s, b }, { on: true, h, s, b, fx: null });
+                        setOpen(false);
+                      }}
+                    />
+                  );
+                })}
+              </div>
+            </>
+          )}
           <div className="my-1 h-px bg-line" />
           {naming ? (
             <form
