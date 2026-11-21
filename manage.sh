@@ -22,19 +22,52 @@ mode() {
     case "$value" in native|docker) printf '%s' "$value";; esac
   fi
 }
+saved_port() {
+  if [[ -f "$PORT_FILE" ]]; then
+    printf '%s' "$(<"$PORT_FILE")"
+  else
+    printf '8080'
+  fi
+}
+valid_port() {
+  # Limit the digits before Bash arithmetic to avoid integer overflow on corrupted input.
+  [[ "$1" =~ ^[0-9]{1,5}$ ]] && ((10#$1 >= 1 && 10#$1 <= 65535))
+}
 port() {
-  local value=8080
-  [[ ! -f "$PORT_FILE" ]] || value="$(<"$PORT_FILE")"
-  [[ "$value" =~ ^[0-9]+$ ]] && ((10#$value >= 1 && 10#$value <= 65535)) || fail 'Invalid saved port. Run ./manage.sh port to repair it.'
+  local value
+  value="$(saved_port)"
+  valid_port "$value" || fail 'Invalid saved port. Run ./manage.sh port to repair it.'
   printf '%d' "$((10#$value))"
 }
+port_for_repair() {
+  local value
+  value="$(saved_port)"
+  if valid_port "$value"; then
+    printf '%d' "$((10#$value))"
+  else
+    printf '8080'
+  fi
+}
+port_display() {
+  local value
+  value="$(saved_port)"
+  if valid_port "$value"; then
+    printf '%d' "$((10#$value))"
+  else
+    printf 'invalid (choose option 8 to repair)'
+  fi
+}
 validate_port() {
-  [[ "$1" =~ ^[0-9]+$ ]] && ((10#$1 >= 1 && 10#$1 <= 65535)) || fail 'Port must be an integer from 1 to 65535.'
+  valid_port "$1" || fail 'Port must be an integer from 1 to 65535.'
 }
 configure_port() {
-  local proposed
-  read -r -p "HTTP port [$(port)]: " proposed
-  proposed="${proposed:-$(port)}"
+  local proposed default_port
+  default_port="$(port_for_repair)"
+  if [[ "$(port_display)" == invalid* ]]; then
+    info "Saved port is invalid; using $default_port as the replacement default."
+  fi
+  read -r -p "HTTP port [$default_port]: " proposed
+  proposed="${proposed:-$default_port}"
   validate_port "$proposed"
   ensure_state
   printf '%d\n' "$((10#$proposed))" > "$PORT_FILE"
@@ -216,15 +249,28 @@ update() {
   [[ -d "$ROOT/.git" ]] || fail 'Updates require a Git checkout. Downloaded archives should be updated manually.'
   command -v git >/dev/null || fail 'git is required for updates.'
   [[ -z "$(git -C "$ROOT" status --porcelain --untracked-files=no)" ]] || fail 'Tracked files have local changes; commit or stash before updating.'
+
+  local current_mode docker_was_running=0
+  current_mode="$(mode)"
+  if [[ "$current_mode" == docker ]]; then
+    check_docker
+    # Capture state before pulling: updated Compose files might change the service definition.
+    if compose ps --status running --services | grep -Fxq lifx; then
+      docker_was_running=1
+    fi
+  fi
+
   info 'Fetching fast-forward updates from the configured upstream branch...'
   git -C "$ROOT" pull --ff-only
-  if [[ "$(mode)" == native ]]; then
+  if [[ "$current_mode" == native ]]; then
     check_python; check_node
     (cd "$ROOT/web" && npm ci --no-audit --no-fund && npm run build)
     if native_pid >/dev/null; then native_stop; native_start; fi
-  else
-    check_docker
+  elif (( docker_was_running )); then
     compose up -d --build
+  else
+    compose build
+    info 'Docker service was stopped before the update and has been left stopped.'
   fi
   info 'Update complete. Your lifx.db was preserved.'
 }
@@ -253,7 +299,7 @@ HELP
 menu() {
   while true; do
     printf '\n=== LIFX Personal Manager ===\n'
-    printf 'Mode: %s | Port: %s\n' "$(mode)" "$(port)"
+    printf 'Mode: %s | Port: %s\n' "$(mode)" "$(port_display)"
     printf '1) Install / switch runtime\n2) Start\n3) Stop\n4) Restart\n5) Status\n6) Logs\n7) Update\n8) Change port\n9) Back up database\n10) Reset password\n0) Exit\n'
     local choice
     read -r -p 'Select: ' choice || return
