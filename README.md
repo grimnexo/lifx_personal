@@ -8,7 +8,7 @@ A small local web service that discovers and controls LIFX lights **directly ove
 
 ## Version
 
-Current build: **1.0.1** (see `VERSION` at the top of `hl_lifx_control.py`). The version is printed when the service starts, returned as `version` by `GET /api/state`, and shown at the bottom of the Settings menu. Every release ships with a `CHANGELOG.md` listing what changed and which files were updated. Releases use `MAJOR.MINOR.PATCH`: MAJOR for changes that break `config.json` or the API, MINOR for new features, PATCH for fixes.
+Current build: **1.1.0** (see `VERSION` at the top of `hl_lifx_control.py`). The version is printed when the service starts, returned as `version` by `GET /api/state`, and shown at the bottom of the Settings menu. Every release ships with a `CHANGELOG.md` listing what changed and which files were updated. Releases use `MAJOR.MINOR.PATCH`: MAJOR for changes that break `config.json` or the API, MINOR for new features, PATCH for fixes.
 
 ## Files
 
@@ -24,6 +24,10 @@ Current build: **1.0.1** (see `VERSION` at the top of `hl_lifx_control.py`). The
 | `lifx_db.py` | Storage module used by `hl_lifx_control.py` |
 
 On first start, an existing `config.json` (or older `data.json`) is imported into `lifx.db` once. The JSON file is left in place and is no longer read after that.
+
+## Installer and service management
+
+The Linux interactive installer supports **native Python directory installs** or **Docker Compose with host networking**, with the same persistent SQLite database in both modes. Run `chmod +x manage.sh && ./manage.sh` from the repository root. See [INSTALL.md](INSTALL.md) for setup, updates, backups, and troubleshooting.
 
 ## Running
 
