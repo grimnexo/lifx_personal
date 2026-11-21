@@ -54,7 +54,7 @@ export interface AppCtx {
   setGroupLights(g: Group, local: Partial<Light>, body: Body, now?: boolean): void;
   powerGroup(g: Group, on: boolean): void;
   powerAll(on: boolean): void;
-  applyToAll(body: Body, local: Partial<Light>): void;
+  applyToLights(macs: string[], body: Body, local: Partial<Light>): void;
   startEffect(target: string, macs: string[], kind: FxKind): void;
   stopEffect(target: string, macs: string[]): void;
   startPattern(macs: string[], p: Pattern): void;
@@ -269,10 +269,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     void api('all', 'POST', { power: on });
   }
 
-  function applyToAll(body: Body, local: Partial<Light>) {
+  function applyToLights(macs: string[], body: Body, local: Partial<Light>) {
+    if (macs.length === 0) return;
     markEdit();
-    updateLights((l) => l.online, local);
-    void api('all', 'POST', body);
+    updateLights((l) => macs.includes(l.mac), local);
+    void api('all', 'POST', { ...body, macs });
   }
 
   function startEffect(target: string, macs: string[], kind: FxKind) {
@@ -459,7 +460,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setGroupLights,
     powerGroup,
     powerAll,
-    applyToAll,
+    applyToLights,
     startEffect,
     stopEffect,
     startPattern,

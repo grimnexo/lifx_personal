@@ -5,7 +5,7 @@ import type { Scene } from '../types';
 import { Icon } from './icons';
 import { PatternsDialog } from './PatternsDialog';
 import { SceneEditorDialog } from './SceneEditorDialog';
-import { btn, btnPrimary, btnSmall, input } from './ui';
+import { btn, btnPrimary, btnSmall, input, seg } from './ui';
 
 const row = 'flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-[.9rem] text-ink hover:bg-soft';
 
@@ -19,14 +19,33 @@ interface MenuPlacement {
 }
 
 export function ScenesMenu({ align = 'right', drop = 'down', block = false, compact = false }: MenuPlacement) {
-  const { scenes, lights, settings, recallScene, captureScene, applyToAll } = useApp();
+  const { scenes, lights, groups, rooms, settings, recallScene, captureScene, applyToLights } = useApp();
   const [open, setOpen] = useState(false);
   const [naming, setNaming] = useState(false);
   const [name, setName] = useState('');
   const [editor, setEditor] = useState<{ scene: Scene | null } | null>(null);
   const [patternsOpen, setPatternsOpen] = useState(false);
+  const [scope, setScope] = useState<string[]>(['all']);
+  const [includeOff, setIncludeOff] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const onlineCount = lights.filter((l) => l.online).length;
+
+  const inScope = new Set(
+    scope.includes('all')
+      ? lights.map((l) => l.mac)
+      : [
+          ...groups.filter((g) => scope.includes('g:' + g.id)).flatMap((g) => g.members),
+          ...rooms.filter((r) => scope.includes('r:' + r.id)).flatMap((r) => r.lights),
+        ],
+  );
+  const targets = lights.filter((l) => l.online && inScope.has(l.mac) && (includeOff || l.on)).map((l) => l.mac);
+  const quickDisabled = targets.length === 0;
+
+  function toggleScope(key: string) {
+    if (key === 'all') return setScope(['all']);
+    const next = scope.filter((k) => k !== 'all');
+    setScope(next.includes(key) ? next.filter((k) => k !== key) : [...next, key]);
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -119,16 +138,55 @@ export function ScenesMenu({ align = 'right', drop = 'down', block = false, comp
           {(settings.warm_presets.length > 0 || settings.favorite_colors.length > 0) && (
             <>
               <div className="my-1 h-px bg-line" />
-              <p className="m-0 px-3 pt-1 text-[.8rem] text-mut">Quick colors for all lights</p>
+              <p className="m-0 px-3 pt-1 text-[.8rem] text-mut">
+                Quick colors for {targets.length} {targets.length === 1 ? 'light' : 'lights'}
+              </p>
+              <div role="group" aria-label="Lights to change" className="flex flex-wrap gap-1 px-3">
+                <button type="button" aria-pressed={scope.includes('all')} className={seg(scope.includes('all'))} onClick={() => toggleScope('all')}>
+                  All lights
+                </button>
+                {rooms.map((r) => (
+                  <button
+                    key={r.id}
+                    type="button"
+                    aria-pressed={scope.includes('r:' + r.id)}
+                    className={seg(scope.includes('r:' + r.id))}
+                    onClick={() => toggleScope('r:' + r.id)}
+                  >
+                    {r.name}
+                  </button>
+                ))}
+                {groups
+                  .filter((g) => !g.hidden)
+                  .map((g) => (
+                    <button
+                      key={g.id}
+                      type="button"
+                      aria-pressed={scope.includes('g:' + g.id)}
+                      className={seg(scope.includes('g:' + g.id))}
+                      onClick={() => toggleScope('g:' + g.id)}
+                    >
+                      {g.name}
+                    </button>
+                  ))}
+              </div>
+              <label className="flex cursor-pointer items-center gap-2 px-3 py-1 text-[.8rem] text-ink">
+                <input type="checkbox" checked={includeOff} onChange={(e) => setIncludeOff(e.target.checked)} />
+                Include lights that are off (turns them on)
+              </label>
               <div className="flex flex-wrap items-center gap-1.5 px-3 pb-1">
                 {settings.warm_presets.map((k) => (
                   <button
                     key={k}
                     type="button"
                     className={btnSmall}
-                    disabled={onlineCount === 0}
+                    disabled={quickDisabled}
                     onClick={() => {
-                      applyToAll({ power: true, s: 0, k }, { on: true, s: 0, k, fx: null });
+                      applyToLights(
+                        targets,
+                        { ...(includeOff ? { power: true } : {}), s: 0, k },
+                        { on: true, s: 0, k, fx: null },
+                      );
                       setOpen(false);
                     }}
                   >
@@ -143,11 +201,15 @@ export function ScenesMenu({ align = 'right', drop = 'down', block = false, comp
                       type="button"
                       aria-label={`Favorite color ${hex}`}
                       title={hex}
-                      disabled={onlineCount === 0}
+                      disabled={quickDisabled}
                       style={{ backgroundColor: hex }}
                       className="size-6 cursor-pointer rounded-full border border-line p-0 disabled:cursor-not-allowed disabled:opacity-40"
                       onClick={() => {
-                        applyToAll({ power: true, h, s, b }, { on: true, h, s, b, fx: null });
+                        applyToLights(
+                          targets,
+                          { ...(includeOff ? { power: true } : {}), h, s, b },
+                          { on: true, h, s, b, fx: null },
+                        );
                         setOpen(false);
                       }}
                     />

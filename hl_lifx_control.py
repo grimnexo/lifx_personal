@@ -802,9 +802,11 @@ class Handler(BaseHTTPRequestHandler):
             apply([parts[2]], b)
             return self.send_json({'ok': True})
         if parts[1] == 'all':
-            with lock:
-                macs = list(devices)
-            apply(macs, b)
+            macs = b.pop('macs', None)
+            if not isinstance(macs, list):
+                with lock:
+                    macs = list(devices)
+            apply([str(m) for m in macs], b)
             return self.send_json({'ok': True})
         if len(parts) == 3 and parts[1] == 'group':
             g = next((g for g in db['groups'] if g['id'] == parts[2]), None)
