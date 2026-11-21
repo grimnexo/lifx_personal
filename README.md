@@ -25,6 +25,10 @@ Current build: **1.0.1** (see `VERSION` at the top of `hl_lifx_control.py`). The
 
 On first start, an existing `config.json` (or older `data.json`) is imported into `lifx.db` once. The JSON file is left in place and is no longer read after that.
 
+## Installer and service management
+
+The Linux interactive installer supports **native Python directory installs** or **Docker Compose with host networking**, with the same persistent SQLite database in both modes. Run `chmod +x manage.sh && ./manage.sh` from the repository root. See [INSTALL.md](INSTALL.md) for setup, updates, backups, and troubleshooting.
+
 ## Running
 
 Build the web app once (needs Node.js 20.19 or newer):
