@@ -18,7 +18,7 @@ shift 2
 [[ "$1" == -p ]] || exit 92
 shift 2
 case "$1" in
-  ps) [[ "\${ACTIVE:-1}" == 1 ]] && echo lifx || : ;;
+  ps) [[ "${ACTIVE:-1}" == 1 ]] && echo lifx || : ;;
   stop|up|build) printf '%s:%s\\n' "$1" "$LIFX_BIND_ADDR" >> "$CALLS" ;;
   *) exit 93 ;;
 esac
