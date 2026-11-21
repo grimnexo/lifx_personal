@@ -1,0 +1,163 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #f1f4f8;
+  --ink: #141c26;
+  --mut: #5b6876;
+  --card: #ffffff;
+  --soft: #e8edf3;
+  --line: #d5dde6;
+  --acc: #2563eb;
+  --on-acc: #ffffff;
+  --ok: #15803d;
+  --warn: #b45309;
+  --danger: #b42318;
+  --ipc: #8f9aa6;
+  --shadow: 0 1px 2px rgb(15 23 42 / 0.06), 0 4px 14px rgb(15 23 42 / 0.05);
+  --radius: 14px;
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --bg: #0f151c;
+  --ink: #e7edf3;
+  --mut: #94a3b1;
+  --card: #18212b;
+  --soft: #202b36;
+  --line: #2c3947;
+  --acc: #7fb3e0;
+  --on-acc: #0f151c;
+  --ok: #4ade80;
+  --warn: #fbbf24;
+  --danger: #f87171;
+  --ipc: #8996a3;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 6px 20px rgb(0 0 0 / 0.25);
+  color-scheme: dark;
+}
+
+:root[data-accent="teal"] { --acc: #0f766e; }
+:root[data-accent="green"] { --acc: #15803d; }
+:root[data-accent="violet"] { --acc: #6d4bd6; }
+:root[data-accent="amber"] { --acc: #b7791f; }
+:root[data-accent="orange"] { --acc: #c2410c; }
+:root[data-accent="rose"] { --acc: #be3455; }
+:root[data-accent="slate"] { --acc: #475569; }
+:root[data-theme="dark"][data-accent="teal"] { --acc: #5eead4; }
+:root[data-theme="dark"][data-accent="green"] { --acc: #4ade80; }
+:root[data-theme="dark"][data-accent="violet"] { --acc: #c4b5fd; }
+:root[data-theme="dark"][data-accent="amber"] { --acc: #fcd34d; }
+:root[data-theme="dark"][data-accent="orange"] { --acc: #fdba74; }
+:root[data-theme="dark"][data-accent="rose"] { --acc: #fda4af; }
+:root[data-theme="dark"][data-accent="slate"] { --acc: #cbd5e1; }
+
+:root[data-palette="paper"]:not([data-theme="dark"]) {
+  --bg: #f7f1e6; --card: #fffaf0; --soft: #efe6d4; --line: #dccfb4;
+}
+:root[data-palette="mist"]:not([data-theme="dark"]) {
+  --bg: #e8f0f7; --card: #f7fbff; --soft: #dbe7f2; --line: #bccfe0;
+}
+:root[data-palette="sage"]:not([data-theme="dark"]) {
+  --bg: #eef4ee; --card: #f8fcf8; --soft: #e1ebe1; --line: #c3d4c3;
+}
+:root[data-palette="dusk"]:not([data-theme="dark"]) {
+  --bg: #f1eef8; --card: #faf8ff; --soft: #e6e0f2; --line: #cdc3e3;
+}
+:root[data-theme="dark"][data-palette="paper"] {
+  --bg: #1c1812; --card: #26211a; --soft: #302a21; --line: #443c2f;
+}
+:root[data-theme="dark"][data-palette="mist"] {
+  --bg: #0e1624; --card: #16202f; --soft: #1e2a3c; --line: #2d3c52;
+}
+:root[data-theme="dark"][data-palette="sage"] {
+  --bg: #101a14; --card: #172219; --soft: #1f2d22; --line: #2f4334;
+}
+:root[data-theme="dark"][data-palette="dusk"] {
+  --bg: #15111f; --card: #1e1829; --soft: #292137; --line: #3b3050;
+}
+
+:root[data-contrast="high"] {
+  --bg: #ffffff;
+  --ink: #000000;
+  --mut: #1f2937;
+  --card: #ffffff;
+  --soft: #e5e7eb;
+  --line: #4b5563;
+}
+:root[data-theme="dark"][data-contrast="high"] {
+  --bg: #000000;
+  --ink: #ffffff;
+  --mut: #e5e7eb;
+  --card: #000000;
+  --soft: #1f1f1f;
+  --line: #9ca3af;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-ink: var(--ink);
+  --color-mut: var(--mut);
+  --color-card: var(--card);
+  --color-soft: var(--soft);
+  --color-line: var(--line);
+  --color-acc: var(--acc);
+  --color-on-acc: var(--on-acc);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+  --color-ipc: var(--ipc);
+  --shadow-card: var(--shadow);
+  --font-sans: ui-rounded, "Avenir Next", "Segoe UI", system-ui, sans-serif;
+}
+
+@layer base {
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 1rem/1.45 var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  input[type="range"] {
+    accent-color: var(--acc);
+  }
+  :focus-visible {
+    outline: 2px solid var(--acc);
+    outline-offset: 2px;
+  }
+}
+
+:root[data-text="small"] { font-size: 15px; }
+:root[data-text="large"] { font-size: 18px; }
+
+:root[data-motion="reduce"] *,
+:root[data-motion="reduce"] *::before,
+:root[data-motion="reduce"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+@layer components {
+  .kelvin {
+    appearance: none;
+    height: 10px;
+    border-radius: 9px;
+    background: linear-gradient(90deg, #ff9d3a, #fff4e5 45%, #cfe0ff, #8fb4ff);
+  }
+  .kelvin::-webkit-slider-thumb {
+    appearance: none;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #fff;
+    border: 2px solid #555;
+  }
+  .kelvin::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #fff;
+    border: 2px solid #555;
+  }
+}

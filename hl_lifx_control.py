@@ -1,31 +1,60 @@
 #!/usr/bin/env python3
 """hl_lifx_control: local LIFX controller. Speaks the LIFX LAN UDP protocol and serves a web UI + JSON API.
 Standard library only (Python 3.8+). See README.md."""
-import datetime as dt, ipaddress, json, math, os, random, socket, struct, threading, time
+import datetime as dt, hashlib, hmac, ipaddress, json, math, mimetypes, os, random, secrets, socket, sqlite3, struct, threading, time
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from lifx_db import DATA_KEYS, LIST_KEYS, Store
 
 VERSION = '1.0.1'  # bump on every release and add an entry to CHANGELOG.md
 PORT = int(os.environ.get('PORT', 8080))
 LIFX = 56700
 SRC = 0x4C494658
 HERE = os.path.dirname(os.path.abspath(__file__))
-DATA = os.path.join(HERE, 'config.json')
-_OLD = os.path.join(HERE, 'data.json')  # name used by earlier versions
-if not os.path.exists(DATA) and os.path.exists(_OLD):
-    try:
-        os.rename(_OLD, DATA)  # keep existing settings, groups and presets
-    except OSError:
-        pass
+DIST = os.path.join(HERE, 'web', 'dist')  # built by `npm run build` in web/
+DB_FILE = os.path.join(HERE, 'lifx.db')
+LEGACY_FILES = (os.path.join(HERE, 'config.json'), os.path.join(HERE, 'data.json'))  # JSON config from earlier versions
 
-db = {'settings': {'broadcast': '255.255.255.255', 'ips': [], 'poll': 3, 'transition': 0.5, 'scan': [], 'lat': None, 'lon': None, 'light_order': []}, 'groups': [], 'schedules': []}
-try:
-    with open(DATA) as f:
-        _loaded = json.load(f)
-    db['groups'] = _loaded.get('groups', [])
-    db['schedules'] = _loaded.get('schedules', [])
-    db['settings'].update(_loaded.get('settings', {}))
-except Exception:
-    pass
+
+def read_legacy():
+    for path in LEGACY_FILES:
+        if os.path.exists(path):
+            try:
+                with open(path) as f:
+                    return json.load(f)
+            except (OSError, ValueError) as e:
+                print(f'Could not read {os.path.basename(path)}: {e}')
+    return None
+
+
+store = Store(DB_FILE)
+if not store.has_app_data() and store.user_count() == 0:
+    legacy = read_legacy()
+    if legacy is not None:
+        store.import_legacy(legacy)
+        print(f'Imported settings and accounts into {os.path.basename(DB_FILE)}')
+
+def clean_light_ips(items):
+    out, seen = [], set()
+    for x in (items if isinstance(items, list) else []):
+        raw_ip, name = (x.get('ip'), x.get('name')) if isinstance(x, dict) else (x, '')
+        ip = str(raw_ip or '').strip()
+        try:
+            ipaddress.IPv4Address(ip)
+        except ValueError:
+            continue
+        if ip in seen:
+            continue
+        seen.add(ip)
+        out.append({'ip': ip, 'name': str(name or '').strip()[:60]})
+    return out
+
+
+db = {'settings': {'broadcast': '255.255.255.255', 'ips': [], 'poll': 3, 'transition': 0.5, 'scan': [], 'lat': None, 'lon': None, 'light_order': [], 'offline_after': None}}
+db['settings'].update(store.get_data('settings', {}))
+db['settings']['ips'] = clean_light_ips(db['settings']['ips'])
+for _key in LIST_KEYS:
+    db[_key] = store.get_data(_key, [])
 
 lock = threading.Lock()
 devices = {}
@@ -36,8 +65,90 @@ sock.bind(('', 0))
 
 
 def save():
-    with open(DATA, 'w') as f:
-        json.dump(db, f, indent=2)
+    store.save_data({k: db[k] for k in DATA_KEYS})
+
+
+def num(v, default=0.0):
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return default
+
+
+def clean_rooms(lst):
+    out, taken = [], set()
+    for r in lst if isinstance(lst, list) else []:
+        if not isinstance(r, dict) or not str(r.get('id', '')).strip():
+            continue
+        macs = [m for m in r.get('lights', []) if isinstance(m, str) and m not in taken]
+        taken.update(macs)
+        out.append({'id': str(r['id']), 'name': str(r.get('name', '')).strip()[:40] or 'Room', 'lights': macs})
+    return out
+
+
+def clean_scenes(lst):
+    out = []
+    for s in lst if isinstance(lst, list) else []:
+        if not isinstance(s, dict) or not str(s.get('id', '')).strip() or not isinstance(s.get('lights'), dict):
+            continue
+        lights = {m: {'on': bool(c.get('on')), 'h': num(c.get('h')), 's': num(c.get('s')), 'b': num(c.get('b')), 'k': num(c.get('k'), 3500)}
+                  for m, c in s['lights'].items() if isinstance(c, dict)}
+        out.append({'id': str(s['id']), 'name': str(s.get('name', '')).strip()[:40] or 'Scene', 'lights': lights})
+    return out
+
+
+def clean_favorites(lst):
+    return [{'type': f['type'], 'id': str(f['id'])} for f in (lst if isinstance(lst, list) else [])
+            if isinstance(f, dict) and f.get('type') in ('light', 'group', 'room', 'scene') and f.get('id')]
+
+
+PBKDF2_ROUNDS = 200_000
+SESSION_SECONDS = 30 * 24 * 3600
+attempts = {}  # username -> [failed count, locked until]
+
+
+def hash_secret(secret, salt=None):
+    salt = salt or secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac('sha256', secret.encode(), salt, PBKDF2_ROUNDS)
+    return {'salt': salt.hex(), 'hash': digest.hex()}
+
+
+def check_secret(secret, rec):
+    if not rec:
+        return False
+    digest = hashlib.pbkdf2_hmac('sha256', secret.encode(), bytes.fromhex(rec['salt']), PBKDF2_ROUNDS)
+    return hmac.compare_digest(digest.hex(), rec['hash'])
+
+
+def new_user(username, name, password):
+    return {'id': secrets.token_hex(6), 'username': username, 'name': name, 'theme': 'auto',
+            'password': hash_secret(password), 'pin': None}
+
+
+APPEARANCE_OPTIONS = {
+    'theme': ('auto', 'light', 'dark'),
+    'accent': ('blue', 'teal', 'green', 'violet', 'amber', 'orange', 'rose', 'slate'),
+    'palette': ('default', 'paper', 'mist', 'sage', 'dusk'),
+    'layout': ('top', 'side'),
+    'contrast': ('standard', 'high'),
+    'textSize': ('small', 'default', 'large'),
+    'motion': ('system', 'reduce'),
+}
+APPEARANCE_DEFAULTS = {'theme': 'auto', 'accent': 'blue', 'palette': 'default', 'layout': 'top',
+                       'contrast': 'standard', 'textSize': 'default', 'motion': 'system'}
+
+
+def appearance_of(u):
+    return {k: u.get(k, APPEARANCE_DEFAULTS[k]) for k in APPEARANCE_OPTIONS}
+
+
+def public_user(u):
+    return {'id': u['id'], 'username': u['username'], 'name': u['name'], **appearance_of(u),
+            'hasPin': bool(u.get('pin'))}
+
+
+if store.user_count() == 0:
+    store.insert_user(new_user('test', 'Test user', 'test'))  # development account until real authentication exists
 
 
 def packet(mtype, mac=None, payload=b''):
@@ -50,11 +161,16 @@ def packet(mtype, mac=None, payload=b''):
     return hdr + payload
 
 
+send_failures = {}
+
+
 def tx(buf, ip):
     try:
         sock.sendto(buf, (ip, LIFX))
     except OSError as e:
-        print('send error:', ip, e)
+        send_failures[e.errno] = send_failures.get(e.errno, 0) + 1
+        if send_failures[e.errno] == 1:
+            print('send error:', ip, e, '(further errors of this type are suppressed)')
 
 
 stats = {'replies': 0}
@@ -130,8 +246,8 @@ def poll_once(n):
         s = db['settings']
         tx(packet(2), s['broadcast'])  # GetService: discovers new lights
         tx(packet(2), '255.255.255.255')
-        for ip in s['ips']:
-            tx(packet(2), ip)
+        for rec in s['ips']:
+            tx(packet(2), rec['ip'])
         if not devices or n % 10 == 0:  # broadcasts can be filtered; also probe each address directly
             for ip in scan_targets():
                 tx(packet(2), ip)
@@ -178,8 +294,13 @@ EFFECTS = set(WAVES) | {'flicker'}
 # 'flicker' (candle) has no bulb-side waveform, so the server emulates it: see flicker_loop()
 
 
+def offline_limit():
+    s = db['settings']
+    return s['offline_after'] or s['poll'] * 4 + 3
+
+
 def is_online(d):
-    return time.time() - d['seen'] < db['settings']['poll'] * 4 + 3
+    return time.time() - d['seen'] < offline_limit()
 
 
 def run_effect(macs, kind, color=None, times=None, seconds=None):
@@ -287,7 +408,7 @@ def stop_effect(macs):
 
 
 def view(d):
-    online = time.time() - d['seen'] < db['settings']['poll'] * 4 + 3
+    online = time.time() - d['seen'] < offline_limit()
     return {'mac': d['mac'], 'label': d['label'], 'ip': d['ip'], 'online': online, 'on': d['on'],
             'h': round(d['h'] / 65535 * 360), 's': round(d['s'] / 65535 * 100),
             'b': round(d['b'] / 65535 * 100), 'k': d['k'],
@@ -387,17 +508,135 @@ def schedule_loop():
         time.sleep(15)
 
 
+def sun_today():
+    s = db['settings']
+    if s.get('lat') is None or s.get('lon') is None:
+        return None
+    day = dt.datetime.now().astimezone().date()
+    out = {}
+    for key, rise in (('sunrise', True), ('sunset', False)):
+        t = sun_event(day, s['lat'], s['lon'], rise)
+        out[key] = t.strftime('%H:%M') if t else None
+    return out
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
-    def send_json(self, obj, code=200):
+    def stream_events(self):
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/event-stream')
+        self.send_header('Cache-Control', 'no-cache')
+        self.send_header('Connection', 'close')
+        self.end_headers()
+        last, idle = None, 0
+        try:
+            while True:
+                with lock:
+                    snap = json.dumps([view(d) for d in devices.values()])
+                if snap != last:
+                    last, idle = snap, 0
+                    self.wfile.write(b'data: ' + snap.encode() + b'\n\n')
+                else:
+                    idle += 1
+                    if idle >= 15:
+                        idle = 0
+                        self.wfile.write(b': keep-alive\n\n')
+                self.wfile.flush()
+                time.sleep(1)
+        except OSError:
+            pass
+        self.close_connection = True
+
+    def send_json(self, obj, code=200, headers=()):
         data = json.dumps(obj).encode()
         self.send_response(code)
         self.send_header('Content-Type', 'application/json')
         self.send_header('Content-Length', str(len(data)))
+        for k, v in headers:
+            self.send_header(k, v)
         self.end_headers()
         self.wfile.write(data)
+
+    def session_token(self):
+        auth = self.headers.get('Authorization', '')
+        if auth.startswith('Bearer '):
+            return auth[7:]
+        try:
+            morsel = SimpleCookie(self.headers.get('Cookie', '')).get('lifx_session')
+        except Exception:
+            return None
+        return morsel.value if morsel else None
+
+    def session_user(self):
+        return store.session_user(self.session_token())
+
+    def login(self, b):
+        name = str(b.get('username', '')).strip()
+        user = store.user_by_name(name)
+        tries = attempts.setdefault(name, [0, 0.0])
+        if tries[1] > time.time():
+            return self.send_json({'ok': False, 'error': 'Too many attempts. Wait a minute and try again.'}, 429)
+        use_pin = 'pin' in b
+        secret = str(b.get('pin' if use_pin else 'password', ''))
+        ok = bool(user) and check_secret(secret, user['pin' if use_pin else 'password'])
+        if not ok:
+            tries[0] += 1
+            if tries[0] >= 5:
+                tries[:] = [0, time.time() + 60]
+            return self.send_json({'ok': False, 'error': 'Wrong username or ' + ('PIN' if use_pin else 'password')}, 401)
+        attempts.pop(name, None)
+        token = secrets.token_urlsafe(32)
+        store.create_session(token, user['id'], time.time() + SESSION_SECONDS)
+        self.send_json({'ok': True, 'user': public_user(user), 'token': token},
+                       headers=[('Set-Cookie', f'lifx_session={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={SESSION_SECONDS}')])
+
+    def auth_route(self, path, method, b):
+        if path == '/api/auth/login' and method == 'POST':
+            return self.login(b)
+        if path == '/api/auth/logout' and method == 'POST':
+            store.delete_session(self.session_token())
+            return self.send_json({'ok': True}, headers=[('Set-Cookie', 'lifx_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0')])
+        user = self.session_user()
+        if not user:
+            return self.send_json({'ok': False, 'error': 'Not signed in'}, 401)
+        if path == '/api/auth/me' and method == 'GET':
+            return self.send_json({'ok': True, 'user': public_user(user)})
+        self.send_json({'error': 'not found'}, 404)
+
+    def update_account(self, user, b):
+        name = str(b['name']).strip()[:40] if 'name' in b else user['name']
+        if not name:
+            return self.send_json({'ok': False, 'error': 'Name cannot be empty'}, 400)
+        appearance = appearance_of(user)
+        for key, options in APPEARANCE_OPTIONS.items():
+            value = b.get(key, appearance[key])
+            if value not in options:
+                return self.send_json({'ok': False, 'error': f'Unknown value for {key}'}, 400)
+            appearance[key] = value
+        changes_secret = 'newPassword' in b or 'pin' in b
+        if changes_secret and not check_secret(str(b.get('currentPassword', '')), user['password']):
+            return self.send_json({'ok': False, 'error': 'Current password is wrong'}, 403)
+        new_pw = str(b['newPassword']) if 'newPassword' in b else None
+        if new_pw is not None and len(new_pw) < 4:
+            return self.send_json({'ok': False, 'error': 'Password must be at least 4 characters'}, 400)
+        pin = str(b['pin']).strip() if 'pin' in b else None
+        if pin and not (pin.isdigit() and 4 <= len(pin) <= 8):
+            return self.send_json({'ok': False, 'error': 'PIN must be 4 to 8 digits'}, 400)
+        user['name'] = name
+        user.update(appearance)
+        if new_pw is not None:
+            user['password'] = hash_secret(new_pw)
+        if pin is not None:
+            user['pin'] = hash_secret(pin) if pin else None
+        try:
+            store.update_user(user)
+        except sqlite3.Error as e:
+            return self.send_json({'ok': False, 'error': f'Could not save account: {e}'}, 500)
+        if new_pw is not None:
+            store.delete_other_sessions(user['id'], self.session_token())
+        self.send_json({'ok': True, 'user': public_user(user)})
 
     def read_body(self):
         try:
@@ -406,6 +645,25 @@ class Handler(BaseHTTPRequestHandler):
             return b if isinstance(b, dict) else {}
         except Exception:
             return {}
+
+    def serve_web(self, path):
+        full = os.path.abspath(os.path.join(DIST, path.lstrip('/') or 'index.html'))
+        if not full.startswith(DIST + os.sep) or not os.path.isfile(full):
+            full = os.path.join(DIST, 'index.html')  # client-side fallback for unknown paths
+        try:
+            with open(full, 'rb') as f:
+                data = f.read()
+        except OSError:
+            data = b'Web UI not built. Run: cd web && npm install && npm run build'
+            return self.send_bytes(data, 'text/plain; charset=utf-8', 503)
+        self.send_bytes(data, mimetypes.guess_type(full)[0] or 'application/octet-stream')
+
+    def send_bytes(self, data, ctype, code=200):
+        self.send_response(code)
+        self.send_header('Content-Type', ctype)
+        self.send_header('Content-Length', str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
 
     def route(self, method):
         try:
@@ -422,25 +680,35 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split('?')[0]
         parts = [p for p in path.split('/') if p]
         if not parts or parts[0] != 'api':
-            try:
-                with open(os.path.join(HERE, 'index.html'), 'rb') as f:
-                    data = f.read()
-                self.send_response(200)
-                self.send_header('Content-Type', 'text/html; charset=utf-8')
-                self.send_header('Content-Length', str(len(data)))
-                self.end_headers()
-                self.wfile.write(data)
-            except OSError:
-                self.send_json({'error': 'index.html missing'}, 500)
-            return
+            return self.serve_web(path)
         b = {} if method == 'GET' else self.read_body()
+        if parts[1:2] == ['auth']:
+            return self.auth_route(path, method, b)
+        user = self.session_user()
+        if not user:
+            return self.send_json({'ok': False, 'error': 'Not signed in'}, 401)
+        if path == '/api/account' and method == 'PUT':
+            return self.update_account(user, b)
+        if path == '/api/events' and method == 'GET':
+            return self.stream_events()
         if path == '/api/state':
             with lock:
                 lights = [view(d) for d in devices.values()]
             return self.send_json({'lights': lights, 'groups': db['groups'], 'settings': db['settings'],
                                    'schedules': [dict(s, next=next_fire(s)) for s in db['schedules']],
-                                   'version': VERSION,
+                                   'rooms': db['rooms'], 'scenes': db['scenes'], 'favorites': db['favorites'],
+                                   'sun': sun_today(), 'version': VERSION,
                                    'diag': {'local_ip': local_ip(db['settings']['broadcast']), 'replies': stats['replies']}})
+        if len(parts) == 4 and parts[1] == 'light' and parts[3] == 'label':
+            label = str(b.get('label', '')).strip().encode()[:32].decode('utf8', 'ignore')
+            if not label:
+                return self.send_json({'ok': False, 'error': 'Name cannot be empty'}, 400)
+            with lock:
+                d = devices.get(parts[2])
+                if d:
+                    d['label'] = label
+                    tx(packet(24, d['mac'], label.encode().ljust(32, b'\0')), d['ip'])
+            return self.send_json({'ok': bool(d)}, 200 if d else 404)
         if len(parts) == 3 and parts[1] == 'light':
             apply([parts[2]], b)
             return self.send_json({'ok': True})
@@ -484,6 +752,28 @@ class Handler(BaseHTTPRequestHandler):
                 s['manual_runs'] = o.get('manual_runs', 0)
             save()
             return self.send_json({'ok': True})
+        if len(parts) == 3 and parts[1] == 'room':
+            room = next((r for r in db['rooms'] if r['id'] == parts[2]), None)
+            if room and 'power' in b:
+                apply(room['lights'], {'power': bool(b['power'])})
+            return self.send_json({'ok': bool(room)}, 200 if room else 404)
+        if len(parts) == 4 and parts[1] == 'scene' and parts[3] == 'apply':
+            sc = next((s for s in db['scenes'] if s['id'] == parts[2]), None)
+            for mac, c in (sc['lights'].items() if sc else []):
+                apply([mac], {'h': c['h'], 's': c['s'], 'b': c['b'], 'k': c['k'], 'power': c['on']})
+            return self.send_json({'ok': bool(sc)}, 200 if sc else 404)
+        if path == '/api/rooms' and method == 'PUT':
+            db['rooms'] = clean_rooms(b.get('rooms'))
+            save()
+            return self.send_json({'ok': True})
+        if path == '/api/scenes' and method == 'PUT':
+            db['scenes'] = clean_scenes(b.get('scenes'))
+            save()
+            return self.send_json({'ok': True})
+        if path == '/api/favorites' and method == 'PUT':
+            db['favorites'] = clean_favorites(b.get('favorites'))
+            save()
+            return self.send_json({'ok': True})
         if path == '/api/groups' and method == 'PUT':
             groups = b.get('groups')
             db['groups'] = groups if isinstance(groups, list) else []
@@ -494,7 +784,7 @@ class Handler(BaseHTTPRequestHandler):
             if isinstance(b.get('broadcast'), str) and b['broadcast'].strip():
                 s['broadcast'] = b['broadcast'].strip()
             if isinstance(b.get('ips'), list):
-                s['ips'] = [str(x).strip() for x in b['ips'] if str(x).strip()]
+                s['ips'] = clean_light_ips(b['ips'])
             for k, lim in (('lat', 90), ('lon', 180)):
                 if k in b:
                     try:
@@ -511,12 +801,14 @@ class Handler(BaseHTTPRequestHandler):
                     s['poll'] = float(b['poll'])
                 if float(b.get('transition', -1)) >= 0:
                     s['transition'] = float(b['transition'])
+                if 'offline_after' in b:
+                    s['offline_after'] = None if b['offline_after'] in (None, '') else max(3.0, float(b['offline_after']))
             except (TypeError, ValueError):
                 pass
             try:
                 save()
-            except OSError as e:
-                return self.send_json({'ok': False, 'error': f'Could not write config.json: {e}'}, 500)
+            except sqlite3.Error as e:
+                return self.send_json({'ok': False, 'error': f'Could not save settings: {e}'}, 500)
             return self.send_json({'ok': True})
         self.send_json({'error': 'not found'}, 404)
 

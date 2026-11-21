@@ -1,6 +1,9 @@
-# Your own settings: home location, light IPs, groups, presets, schedules. Keep out of the repo.
+# Your own settings: home location, light IPs, groups, presets, schedules, accounts. Keep out of the repo.
 config.json
 data.json
+lifx.db
+lifx.db-wal
+lifx.db-shm
 
 # Python
 __pycache__/
