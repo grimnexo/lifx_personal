@@ -18,7 +18,11 @@ Choose the HTTP port with `./manage.sh port` (default 8080), then visit `http://
 
 Native prerequisites: Python 3.8+, Node.js 20.19+ or 22.12+ with npm. This mode runs Python directly from the checkout and builds the React UI in `web/dist`. Existing installations can continue using their original direct startup method.
 
-Docker prerequisites: **native Linux** Docker Engine and Docker Compose v2. The Dockerfile builds the React UI and runs the Python backend in one image. Docker uses `network_mode: host` to permit LIFX UDP broadcast discovery and replies (port 56700). Docker bridge/WSL2 NAT/Docker Desktop network emulation cannot be relied on for broadcast discovery. Docker runs with the invoking user's UID/GID and mounts the checkout at `/data`, preserving the original SQLite database. Make sure the invoking user can write to the checkout. The host's time zone is passed through for schedules.
+Docker prerequisites: Docker Engine with Compose v2, running on Linux or through Docker Desktop's WSL2 integration. The Dockerfile builds the React UI and runs the Python backend in one image. **Bridge networking is now the default**: `compose.yaml` publishes the selected host HTTP port (`./manage.sh port`, default 8080) to **container port 8080/tcp**, bound to `0.0.0.0` by default. For localhost-only HTTP binding, set `LIFX_BIND_ADDR=127.0.0.1` when launching the wrapper; do not expose the application directly to the internet.
+
+**Native Linux host networking is optional** via `./manage.sh network` (select `host`). It uses `compose.host.yaml`, which does not publish Docker ports and has the backend listen directly on the host's configured port. Host networking is normally the best fit for LIFX UDP broadcast discovery and replies (bulb UDP port 56700). In **bridge networking**, automated broadcast discovery may fail behind Docker NAT or WSL2/Docker Desktop; add direct bulb IP addresses or subnet scans in app settings. Publishing the HTTP port does not expose bulb UDP/56700 and does not make broadcast discovery work. The Docker runtime uses the invoking user's UID/GID and mounts the checkout at `/data`, preserving the existing SQLite database. Ensure this user can write to the checkout. Host timezone is passed through for schedules.
+
+`./manage.sh network` switches between bridge and host without deleting the database. If the app was running, the script removes the old container and restarts under the selected networking configuration; if stopped, it stays stopped.
 
 ## Management
 
@@ -29,7 +33,8 @@ Docker prerequisites: **native Linux** Docker Engine and Docker Compose v2. The 
 ./manage.sh status
 ./manage.sh logs           # Ctrl-C exits the log viewer
 ./manage.sh update         # Fast-forward git pull, rebuild, restart if needed
-./manage.sh port           # Configure the port; restart afterward
+./manage.sh port           # Configure external HTTP port (bridge); restart afterward
+./manage.sh network        # Switch Docker bridge/host networking
 ./manage.sh backup         # SQLite online backup to .lifx/backups/
 ./manage.sh password       # Reset account password and revoke its sessions
 ```
