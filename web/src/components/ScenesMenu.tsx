@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { useApp } from '../context';
+import type { Scene } from '../types';
 import { Icon } from './icons';
+import { PatternsDialog } from './PatternsDialog';
+import { SceneEditorDialog } from './SceneEditorDialog';
 import { btn, btnPrimary, btnSmall, input } from './ui';
 
 const row = 'flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-[.9rem] text-ink hover:bg-soft';
@@ -17,6 +20,8 @@ export function ScenesMenu({ align = 'right', drop = 'down', block = false, comp
   const [open, setOpen] = useState(false);
   const [naming, setNaming] = useState(false);
   const [name, setName] = useState('');
+  const [editor, setEditor] = useState<{ scene: Scene | null } | null>(null);
+  const [patternsOpen, setPatternsOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const onlineCount = lights.filter((l) => l.online).length;
 
@@ -97,6 +102,17 @@ export function ScenesMenu({ align = 'right', drop = 'down', block = false, comp
               </button>
               <button
                 type="button"
+                aria-label={`Edit scene ${s.name}`}
+                className="cursor-pointer rounded-lg border-0 bg-transparent px-2 py-1 text-[.8rem] text-mut hover:bg-soft hover:text-ink"
+                onClick={() => {
+                  setEditor({ scene: s });
+                  setOpen(false);
+                }}
+              >
+                Edit
+              </button>
+              <button
+                type="button"
                 aria-label={`Delete scene ${s.name}`}
                 className="cursor-pointer rounded-lg border-0 bg-transparent px-2 py-1 text-mut hover:bg-soft hover:text-danger"
                 onClick={() =>
@@ -130,18 +146,48 @@ export function ScenesMenu({ align = 'right', drop = 'down', block = false, comp
               </button>
             </form>
           ) : (
-            <button
-              type="button"
-              role="menuitem"
-              className={row}
-              disabled={onlineCount === 0}
-              onClick={() => setNaming(true)}
-            >
-              Save current lights as scene{'\u2026'}
-            </button>
+            <>
+              <button
+                type="button"
+                role="menuitem"
+                className={row}
+                onClick={() => {
+                  setEditor({ scene: null });
+                  setOpen(false);
+                }}
+              >
+                New scene{'\u2026'}
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className={row}
+                disabled={onlineCount === 0}
+                onClick={() => setNaming(true)}
+              >
+                Save current lights as scene{'\u2026'}
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className={row}
+                onClick={() => {
+                  setPatternsOpen(true);
+                  setOpen(false);
+                }}
+              >
+                Patterns{'\u2026'}
+              </button>
+            </>
           )}
         </div>
       )}
+      <SceneEditorDialog
+        open={editor !== null}
+        scene={editor?.scene ?? null}
+        onClose={() => setEditor(null)}
+      />
+      <PatternsDialog open={patternsOpen} onClose={() => setPatternsOpen(false)} />
     </div>
   );
 }

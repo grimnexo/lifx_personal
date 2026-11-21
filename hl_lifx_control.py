@@ -88,6 +88,23 @@ def clean_rooms(lst):
     return out
 
 
+def macs_of(lst):
+    return [m for m in lst if isinstance(m, str)] if isinstance(lst, list) else []
+
+
+def clean_patterns(lst):
+    out = []
+    for p in lst if isinstance(lst, list) else []:
+        if not isinstance(p, dict) or not str(p.get('id', '')).strip():
+            continue
+        steps = [{'h': num(c.get('h')) % 360, 's': min(100, max(0, num(c.get('s')))), 'b': min(100, max(0, num(c.get('b'), 100))),
+                  'k': max(1500, min(9000, num(c.get('k'), 3500))), 'seconds': min(60, max(0.5, num(c.get('seconds'), 2)))}
+                 for c in (p.get('steps') if isinstance(p.get('steps'), list) else []) if isinstance(c, dict)][:32]
+        if steps:
+            out.append({'id': str(p['id']), 'name': str(p.get('name', '')).strip()[:40] or 'Pattern', 'steps': steps})
+    return out
+
+
 def clean_scenes(lst):
     out = []
     for s in lst if isinstance(lst, list) else []:
@@ -95,13 +112,20 @@ def clean_scenes(lst):
             continue
         lights = {m: {'on': bool(c.get('on')), 'h': num(c.get('h')), 's': num(c.get('s')), 'b': num(c.get('b')), 'k': num(c.get('k'), 3500)}
                   for m, c in s['lights'].items() if isinstance(c, dict)}
-        out.append({'id': str(s['id']), 'name': str(s.get('name', '')).strip()[:40] or 'Scene', 'lights': lights})
+        runs = [{'pattern': str(r['pattern']), 'lights': macs_of(r.get('lights'))}
+                for r in (s.get('patterns') if isinstance(s.get('patterns'), list) else [])
+                if isinstance(r, dict) and r.get('pattern')]
+        out.append({'id': str(s['id']), 'name': str(s.get('name', '')).strip()[:40] or 'Scene', 'lights': lights, 'patterns': runs})
     return out
 
 
 def clean_favorites(lst):
     return [{'type': f['type'], 'id': str(f['id'])} for f in (lst if isinstance(lst, list) else [])
             if isinstance(f, dict) and f.get('type') in ('light', 'group', 'room', 'scene') and f.get('id')]
+
+
+db['scenes'] = clean_scenes(db['scenes'])
+db['patterns'] = clean_patterns(db['patterns'])
 
 
 PBKDF2_ROUNDS = 200_000
@@ -396,6 +420,54 @@ def flicker_loop():
                         flicker_step(d, now)
         except Exception as e:
             print('flicker error:', repr(e))
+        time.sleep(0.05)
+
+
+def run_pattern(macs, pattern):
+    """Cycle lights that are ON through the pattern's color steps until stopped or the hour is up."""
+    now = time.time()
+    with lock:
+        for m in macs:
+            d = devices.get(m)
+            if not d or not d.get('on') or not is_online(d):
+                continue
+            if now >= d.get('fx_until', 0):
+                d['base'] = (d['h'], d['s'], d['b'], d['k'])
+            d['fx'] = 'pattern'
+            d['pat'] = {'steps': pattern['steps'], 'i': -1, 'next': now}
+            d['fx_until'] = now + CONTINUOUS_SECONDS
+            d.pop('fl', None)
+
+
+def pattern_step(d, now):
+    """Advance one light's pattern (called under the lock)."""
+    p = d.get('pat')
+    if d.get('fx') != 'pattern' or not p:
+        return
+    if now >= d['fx_until']:
+        bh, bs, bb, bk = d['base']
+        tx(packet(102, d['mac'], struct.pack('<BHHHHI', 0, bh, bs, bb, bk, 400)), d['ip'])
+        d.pop('fx', None)
+        return
+    if now < p['next']:
+        return
+    p['i'] = (p['i'] + 1) % len(p['steps'])
+    c = p['steps'][p['i']]
+    h, s, b = u16(c['h'], 360), u16(c['s'], 100), u16(c['b'], 100)
+    tx(packet(102, d['mac'], struct.pack('<BHHHHI', 0, h, s, b, int(c['k']), round(c['seconds'] * 500))), d['ip'])
+    p['next'] = now + c['seconds']
+
+
+def pattern_loop():
+    while True:
+        try:
+            now = time.time()
+            with lock:
+                for d in list(devices.values()):
+                    if d.get('fx') == 'pattern':
+                        pattern_step(d, now)
+        except Exception as e:
+            print('pattern error:', repr(e))
         time.sleep(0.05)
 
 
@@ -701,6 +773,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({'lights': lights, 'groups': db['groups'], 'settings': db['settings'],
                                    'schedules': [dict(s, next=next_fire(s)) for s in db['schedules']],
                                    'rooms': db['rooms'], 'scenes': db['scenes'], 'favorites': db['favorites'],
+                                   'patterns': db['patterns'],
                                    'sun': sun_today(), 'version': VERSION,
                                    'diag': {'local_ip': local_ip(db['settings']['broadcast']), 'replies': stats['replies']}})
         if len(parts) == 4 and parts[1] == 'light' and parts[3] == 'label':
@@ -765,7 +838,23 @@ class Handler(BaseHTTPRequestHandler):
             sc = next((s for s in db['scenes'] if s['id'] == parts[2]), None)
             for mac, c in (sc['lights'].items() if sc else []):
                 apply([mac], {'h': c['h'], 's': c['s'], 'b': c['b'], 'k': c['k'], 'power': c['on']})
+            for run in (sc['patterns'] if sc else []):
+                p = next((p for p in db['patterns'] if p['id'] == run['pattern']), None)
+                if p:
+                    run_pattern(run['lights'], p)
             return self.send_json({'ok': bool(sc)}, 200 if sc else 404)
+        if len(parts) == 4 and parts[1] == 'pattern' and parts[3] == 'apply':
+            p = next((p for p in db['patterns'] if p['id'] == parts[2]), None)
+            if p:
+                run_pattern(macs_of(b.get('lights')), p)
+            return self.send_json({'ok': bool(p)}, 200 if p else 404)
+        if path == '/api/stop-lights' and method == 'POST':
+            stop_effect(macs_of(b.get('lights')))
+            return self.send_json({'ok': True})
+        if path == '/api/patterns' and method == 'PUT':
+            db['patterns'] = clean_patterns(b.get('patterns'))
+            save()
+            return self.send_json({'ok': True})
         if path == '/api/rooms' and method == 'PUT':
             db['rooms'] = clean_rooms(b.get('rooms'))
             save()
@@ -826,6 +915,7 @@ if __name__ == '__main__':
     threading.Thread(target=poll_loop, daemon=True).start()
     threading.Thread(target=schedule_loop, daemon=True).start()
     threading.Thread(target=flicker_loop, daemon=True).start()
+    threading.Thread(target=pattern_loop, daemon=True).start()
     print(f'hl_lifx_control v{VERSION} running at http://localhost:{PORT}')
     try:
         ThreadingHTTPServer(('0.0.0.0', PORT), Handler).serve_forever()
