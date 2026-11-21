@@ -27,7 +27,7 @@ On first start, an existing `config.json` (or older `data.json`) is imported int
 
 ## Installer and service management
 
-The Linux interactive installer supports **native Python directory installs** or **Docker Compose with host networking**, with the same persistent SQLite database in both modes. Run `chmod +x manage.sh && ./manage.sh` from the repository root. See [INSTALL.md](INSTALL.md) for setup, updates, backups, and troubleshooting.
+The Linux interactive installer supports **native Python directory installs** or **Docker Compose with published HTTP ports (bridge default, host optional)**, with the same persistent SQLite database in both modes. Run `chmod +x manage.sh && ./manage.sh` from the repository root. See [INSTALL.md](INSTALL.md) for setup, updates, backups, and troubleshooting.
 
 ## Running
 

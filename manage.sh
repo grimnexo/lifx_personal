@@ -10,6 +10,9 @@ PID_FILE="$STATE/lifx.pid"
 LOG_FILE="$STATE/lifx.log"
 DB_FILE="$ROOT/lifx.db"
 COMPOSE_FILE="$ROOT/compose.yaml"
+HOST_COMPOSE_FILE="$ROOT/compose.host.yaml"
+NETWORK_FILE="$STATE/docker-network"
+BIND_FILE="$STATE/docker-bind"
 
 info() { printf '[lifx] %s\n' "$*"; }
 fail() { printf '[lifx] ERROR: %s\n' "$*" >&2; exit 1; }
@@ -85,17 +88,110 @@ check_node() {
   node -e 'const [v,m]=process.versions.node.split(".").map(Number);process.exit((v===20&&m>=19)||(v===22&&m>=12)||v>22?0:1)' || fail 'Unsupported Node version. Use Node 20.19+ or 22.12+.'
 }
 check_docker() {
-  [[ "$(uname -s)" == Linux ]] || fail 'Docker mode requires a Linux host for LIFX UDP broadcast discovery.'
+  [[ "$(uname -s)" == Linux ]] || fail 'Docker management requires Linux (including WSL2).']
   command -v docker >/dev/null || fail 'Docker Engine and the Compose plugin are required.'
   docker compose version >/dev/null 2>&1 || fail 'Docker Compose v2 is required (docker compose).'
   docker info >/dev/null 2>&1 || fail 'Docker daemon is unavailable or this user lacks Docker access.'
 }
-compose() {
-  local uid gid current_port
+docker_network() {
+  local selected=bridge
+  [[ ! -f "$NETWORK_FILE" ]] || selected="$(<"$NETWORK_FILE")"
+  case "$selected" in
+    bridge|host) printf '%s' "$selected";;
+    *) fail "Invalid Docker network mode in $NETWORK_FILE (expected bridge or host).";;
+  esac
+}
+valid_bind_address() {
+  # Compose's published host IP must be a literal IPv4 address, not an
+  # arbitrary string that could alter the host:port:container syntax.
+  local address="$1" octet
+  local -a octets
+  [[ "$address" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || return 1
+  IFS=. read -r -a octets <<< "$address"
+  [[ ${#octets[@]} -eq 4 ]] || return 1
+  for octet in "${octets[@]}"; do
+    [[ "$octet" =~ ^(0|[1-9][0-9]{0,2})$ ]] || return 1
+    ((10#$octet <= 255)) || return 1
+  done
+}
+docker_bind() {
+  # One-off LIFX_BIND_ADDR overrides become durable so restarts/updates cannot
+  # accidentally widen a localhost-only published HTTP endpoint.
+  local address=127.0.0.1
+  if [[ ${LIFX_BIND_ADDR+x} ]]; then
+    address="$LIFX_BIND_ADDR"
+  elif [[ -f "$BIND_FILE" ]]; then
+    address="$(<"$BIND_FILE")"
+  fi
+  valid_bind_address "$address" || fail "Invalid Docker HTTP bind address '$address'. Use ./manage.sh bind to repair it."
+  if [[ ${LIFX_BIND_ADDR+x} ]]; then
+    ensure_state
+    printf '%s\n' "$address" > "$BIND_FILE"
+  fi
+  printf '%s' "$address"
+}
+configure_bind() {
+  require_mode
+  [[ "$(mode)" == docker ]] || fail 'HTTP bind configuration only applies to Docker mode.'
+  local current desired
+  # If saved state is invalid, allow repair without first reading it.
+  current=127.0.0.1
+  if [[ -f "$BIND_FILE" ]]; then
+    current="$(<"$BIND_FILE")"
+  fi
+  if ! valid_bind_address "$current"; then
+    info "Invalid saved Docker bind address; defaulting repair prompt to 127.0.0.1."
+    current=127.0.0.1
+  fi
+  read -r -p "Docker HTTP bind IPv4 [$current] (127.0.0.1=local, 0.0.0.0=LAN): " desired
+  desired="${desired:-$current}"
+  valid_bind_address "$desired" || fail 'Bind address must be a valid IPv4 literal (e.g., 127.0.0.1 or 0.0.0.0).'
+  ensure_state
+  printf '%s\n' "$desired" > "$BIND_FILE"
+  info "Docker HTTP bind saved as $desired. Restart the container to apply the change."
+}
+compose_for_network() {
+  local selected="$1"
+  shift
+  local uid gid current_port compose_path bind_address
   uid="$(id -u)"; gid="$(id -g)"
   current_port="$(port)"
-  (cd "$ROOT" && PORT="$current_port" LIFX_UID="$uid" LIFX_GID="$gid" \
-    docker compose -f "$COMPOSE_FILE" -p lifx-personal "$@")
+  bind_address="$(docker_bind)"
+  case "$selected" in
+    bridge) compose_path="$COMPOSE_FILE";;
+    host) compose_path="$HOST_COMPOSE_FILE";;
+    *) fail 'Docker network must be bridge or host.';;
+  esac
+  (cd "$ROOT" && PORT="$current_port" LIFX_BIND_ADDR="$bind_address" LIFX_UID="$uid" LIFX_GID="$gid" \
+    docker compose -f "$compose_path" -p lifx-personal "$@")
+}
+compose() {
+  compose_for_network "$(docker_network)" "$@"
+}
+configure_network() {
+  require_mode
+  [[ "$(mode)" == docker ]] || fail 'Docker networking can only be changed in Docker mode.'
+  check_docker
+  local current desired was_running=0
+  current="$(docker_network)"
+  read -r -p "Docker network [bridge/host] (current: $current): " desired
+  desired="${desired:-$current}"
+  case "$desired" in bridge|host) ;; *) fail 'Choose bridge or host.';; esac
+  [[ "$desired" != "$current" ]] || { info "Docker network remains $current."; return; }
+  if compose_for_network "$current" ps --status running --services | grep -Fxq lifx; then
+    was_running=1
+  fi
+  # Compose changes network mode by replacing the container. Never run two
+  # instances against the same SQLite database.
+  compose_for_network "$current" down
+  ensure_state
+  printf '%s\n' "$desired" > "$NETWORK_FILE"
+  if (( was_running )); then
+    compose up -d --no-build
+    info "Docker network switched to $desired; service restarted."
+  else
+    info "Docker network switched to $desired; service remains stopped."
+  fi
 }
 native_pid() {
   [[ -f "$PID_FILE" ]] || return 1
@@ -182,12 +278,12 @@ install_docker() {
   bootstrap docker
   ensure_state
   printf 'docker\n' > "$MODE_FILE"
-  info 'Docker installation ready. Linux host networking is used for LAN discovery.'
+  info "Docker installation ready (network: $(docker_network), bridge bind: $(docker_bind))."
 }
 install() {
   local selected="${1:-}"
   if [[ -z "$selected" ]]; then
-    printf '1) Native (Python + locally built UI)\n2) Docker (Linux host networking)\n'
+    printf '1) Native (Python + locally built UI)\n2) Docker (bridge networking by default)\n'
     read -r -p 'Installation method [1]: ' selected
     case "${selected:-1}" in 1) selected=native;; 2) selected=docker;; *) fail 'Invalid option.';; esac
   fi
@@ -214,6 +310,7 @@ status() {
   local current_port
   current_port="$(port)"
   info "Mode: $(mode) | Port: $current_port | Database: $DB_FILE"
+  if [[ "$(mode)" == docker ]]; then info "Docker network: $(docker_network) | HTTP bind: $(docker_bind) (bridge only)"; fi
   if [[ "$(mode)" == native ]]; then
     local pid
     if pid="$(native_pid)"; then info "Running (PID $pid)"; else info 'Not running under the wrapper'; fi
@@ -294,9 +391,14 @@ Usage: ./manage.sh [command]
   port                      Change HTTP port (restart afterward)
   backup                    Safely back up live SQLite database
   password                  Reset a local account password
+  network                   Switch Docker bridge/host networking
+  bind                      Set persistent Docker HTTP bind IPv4 address
   help                      Show this help
 
-Docker mode needs native Linux Docker Engine + Compose v2 for LIFX broadcast.
+Bridge mode publishes host PORT -> container 8080/tcp (works with Docker Desktop).
+The default bind is 127.0.0.1; use ./manage.sh bind for LAN access.
+An explicit LIFX_BIND_ADDR=... override is saved for later starts/updates.
+Host mode is intended for native Linux LAN discovery; it has no published ports.
 Both modes preserve lifx.db in the repository directory. LAN use only.
 HELP
 }
@@ -304,13 +406,13 @@ menu() {
   while true; do
     printf '\n=== LIFX Personal Manager ===\n'
     printf 'Mode: %s | Port: %s\n' "$(mode)" "$(port_display)"
-    printf '1) Install / switch runtime\n2) Start\n3) Stop\n4) Restart\n5) Status\n6) Logs\n7) Update\n8) Change port\n9) Back up database\n10) Reset password\n0) Exit\n'
+    printf '1) Install / switch runtime\n2) Start\n3) Stop\n4) Restart\n5) Status\n6) Logs\n7) Update\n8) Change port\n9) Back up database\n10) Reset password\n11) Docker network\n12) Docker HTTP bind address\n0) Exit\n'
     local choice
     read -r -p 'Select: ' choice || return
     case "$choice" in
       1) install;; 2) start;; 3) stop;; 4) restart;; 5) status;;
       6) logs;; 7) update;; 8) configure_port;; 9) backup;;
-      10) password;; 0) return;; *) info 'Invalid option.';;
+      10) password;; 11) configure_network;; 12) configure_bind;; 0) return;; *) info 'Invalid option.';;
     esac
   done
 }
@@ -319,5 +421,6 @@ case "${1:-}" in
   install) install "${2:-}";;
   start) start;; stop) stop;; restart) restart;; status) status;; logs) logs;;
   update) update;; port) configure_port;; backup) backup;; password) password;;
+  network) configure_network;; bind) configure_bind;;
   help|-h|--help) usage;; *) usage; exit 2;;
 esac

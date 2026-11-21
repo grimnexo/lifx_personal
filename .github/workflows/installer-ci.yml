@@ -1,9 +1,9 @@
 name: Installer checks
 on:
   push:
-    paths: [manage.sh, scripts/**, tests/**, Dockerfile, compose.yaml, .dockerignore, .gitattributes, .editorconfig, hl_lifx_control.py, lifx_db.py]
+    paths: [manage.sh, scripts/**, tests/**, Dockerfile, compose.yaml, compose.host.yaml, .dockerignore, .gitattributes, .editorconfig, hl_lifx_control.py, lifx_db.py]
   pull_request:
-    paths: [manage.sh, scripts/**, tests/**, Dockerfile, compose.yaml, .dockerignore, .gitattributes, .editorconfig, hl_lifx_control.py, lifx_db.py]
+    paths: [manage.sh, scripts/**, tests/**, Dockerfile, compose.yaml, compose.host.yaml, .dockerignore, .gitattributes, .editorconfig, hl_lifx_control.py, lifx_db.py]
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -14,4 +14,11 @@ jobs:
           python-version: '3.12'
       - run: bash -n manage.sh
       - run: python3 -m unittest discover -s tests -v
-      - run: docker compose -f compose.yaml config --quiet
+      - run: PORT=9000 docker compose -f compose.yaml config --quiet
+      - run: PORT=9000 docker compose -f compose.host.yaml config --quiet
+      - name: Verify bridge publishes configured HTTP port
+        run: |
+          PORT=9000 docker compose -f compose.yaml config --format json | python3 -c 'import json,sys; service=json.load(sys.stdin)["services"]["lifx"]; assert service["ports"][0]["published"] == "9000"; assert service["ports"][0]["target"] == 8080; assert service["environment"]["PORT"] == "8080"'
+      - name: Verify host mode has no Docker-published ports
+        run: |
+          PORT=9000 docker compose -f compose.host.yaml config --format json | python3 -c 'import json,sys; service=json.load(sys.stdin)["services"]["lifx"]; assert service["network_mode"] == "host"; assert not service.get("ports"); assert service["environment"]["PORT"] == "9000"'
