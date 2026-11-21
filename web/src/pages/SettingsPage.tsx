@@ -157,9 +157,9 @@ function SettingsForm() {
           className="grid items-start gap-5 [grid-template-columns:repeat(auto-fit,minmax(min(100%,24rem),1fr))]"
         >
           {tab === 'network' && (
-            <section className={card} aria-labelledby="network-head">
+            <section className={`${card} [grid-column:1/-1]`} aria-labelledby="network-head">
               <h2 id="network-head" className="text-lg font-semibold">
-                Network
+                Light discovery
               </h2>
               {diag && (
                 <dl className="m-0 grid grid-cols-3 gap-3 rounded-lg bg-soft p-3 text-[.85rem]">
