@@ -9,6 +9,7 @@ import type {
   FxKind,
   Group,
   Light,
+  Pattern,
   Preset,
   Room,
   Scene,
@@ -37,6 +38,7 @@ export interface AppCtx {
   schedules: Schedule[];
   rooms: Room[];
   scenes: Scene[];
+  patterns: Pattern[];
   favorites: Favorite[];
   sun: Sun | null;
   settings: Settings;
@@ -54,12 +56,15 @@ export interface AppCtx {
   powerAll(on: boolean): void;
   startEffect(target: string, macs: string[], kind: FxKind): void;
   stopEffect(target: string, macs: string[]): void;
+  startPattern(macs: string[], p: Pattern): void;
+  stopLights(macs: string[]): void;
   applyPreset(g: Group, p: Preset): void;
   powerRoom(room: Room, on: boolean): void;
   recallScene(scene: Scene): void;
   captureScene(name: string): void;
   updateRooms(rooms: Room[]): void;
   updateScenes(scenes: Scene[]): void;
+  updatePatterns(patterns: Pattern[]): void;
   updateFavorites(favorites: Favorite[]): void;
   updateGroups(fn: (gs: Group[]) => Group[]): void;
   updateSchedules(fn: (ss: Schedule[]) => Schedule[]): void;
@@ -104,6 +109,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     schedules: [],
     rooms: [],
     scenes: [],
+    patterns: [],
     favorites: [],
     sun: null,
     settings: DEFAULT_SETTINGS,
@@ -159,6 +165,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       schedules: keepSaved ? d.schedules : s.schedules ?? [],
       rooms: keepSaved ? d.rooms : s.rooms ?? [],
       scenes: keepSaved ? d.scenes : s.scenes ?? [],
+      patterns: keepSaved ? d.patterns : s.patterns ?? [],
       favorites: keepSaved ? d.favorites : s.favorites ?? [],
       sun: s.sun ?? null,
       settings: keepSaved && s.settings ? { ...s.settings, light_order: d.settings.light_order } : s.settings ?? d.settings,
@@ -228,7 +235,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setData((d) => ({ ...d, lights: d.lights.map((l) => (pick(l) ? { ...l, ...patch } : l)) }));
   }
 
-  function setFx(macs: string[], k: FxKind | null) {
+  function setFx(macs: string[], k: FxKind | 'pattern' | null) {
     setData((d) => ({
       ...d,
       lights: d.lights.map((l) => (macs.includes(l.mac) ? { ...l, fx: k && l.on && l.online ? k : null } : l)),
@@ -269,6 +276,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setFx(macs, null);
   }
 
+  function startPattern(macs: string[], p: Pattern) {
+    void api('pattern/' + p.id + '/apply', 'POST', { lights: macs });
+    setFx(macs, 'pattern');
+  }
+
+  function stopLights(macs: string[]) {
+    void api('stop-lights', 'POST', { lights: macs });
+    setFx(macs, null);
+  }
+
   function applyPreset(g: Group, p: Preset) {
     const entries = Object.entries(p.lights).filter(([m]) => g.members.includes(m));
     markEdit();
@@ -300,11 +317,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   function recallScene(scene: Scene) {
     markEdit();
+    const patterned = new Set(scene.patterns.flatMap((r) => r.lights));
     setData((d) => ({
       ...d,
       lights: d.lights.map((l) => {
         const c = scene.lights[l.mac];
-        return c ? { ...l, on: c.on, h: c.h, s: c.s, b: c.b, k: c.k } : l;
+        const next = c ? { ...l, on: c.on, h: c.h, s: c.s, b: c.b, k: c.k } : l;
+        const fx = patterned.has(l.mac) && next.on && next.online ? 'pattern' : c ? null : l.fx;
+        return { ...next, fx };
       }),
     }));
     void api('scene/' + scene.id + '/apply', 'POST');
@@ -317,7 +337,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         .map((l) => [l.mac, { on: l.on, h: l.h, s: l.s, b: l.b, k: l.k }]),
     );
     const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-    updateScenes([...dataRef.current.scenes, { id, name, lights }]);
+    updateScenes([...dataRef.current.scenes, { id, name, lights, patterns: [] }]);
   }
 
   function updateRooms(rooms: Room[]) {
@@ -332,6 +352,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     markSave();
     setData((d) => ({ ...d, scenes }));
     void api('scenes', 'PUT', { scenes });
+  }
+
+  function updatePatterns(patterns: Pattern[]) {
+    dataRef.current = { ...dataRef.current, patterns };
+    markSave();
+    setData((d) => ({ ...d, patterns }));
+    void api('patterns', 'PUT', { patterns });
   }
 
   function updateFavorites(favorites: Favorite[]) {
@@ -407,6 +434,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     schedules: data.schedules,
     rooms: data.rooms,
     scenes: data.scenes,
+    patterns: data.patterns,
     favorites: data.favorites,
     sun: data.sun,
     settings: data.settings,
@@ -424,12 +452,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     powerAll,
     startEffect,
     stopEffect,
+    startPattern,
+    stopLights,
     applyPreset,
     powerRoom,
     recallScene,
     captureScene,
     updateRooms,
     updateScenes,
+    updatePatterns,
     updateFavorites,
     updateGroups,
     updateSchedules,

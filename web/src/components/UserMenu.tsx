@@ -82,6 +82,9 @@ export function UserMenu({ align = 'right', drop = 'down', block = false, compac
           <Link to="/settings" role="menuitem" className={item} onClick={() => setOpen(false)}>
             Settings
           </Link>
+          <Link to="/devices" role="menuitem" className={item} onClick={() => setOpen(false)}>
+            All Devices
+          </Link>
           <div className="my-1 h-px bg-line" />
           <button type="button" role="menuitem" className={item} onClick={() => void signOut()}>
             Sign out
