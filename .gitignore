@@ -11,3 +11,6 @@ __pycache__/
 
 # Release bundles
 *.zip
+
+# Installer state, process logs, and database backups
+.lifx/
