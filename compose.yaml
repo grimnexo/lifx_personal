@@ -7,7 +7,7 @@ services:
     # Bridge networking: publish the web UI explicitly to Windows/WSL and LAN clients.
     # This maps the chosen host port to the fixed internal HTTP port 8080.
     ports:
-      - "${LIFX_BIND_ADDR:-0.0.0.0}:${PORT:-8080}:8080/tcp"
+      - "${LIFX_BIND_ADDR:-127.0.0.1}:${PORT:-8080}:8080/tcp"
     user: "${LIFX_UID:-1000}:${LIFX_GID:-1000}"
     environment:
       PORT: "8080"
