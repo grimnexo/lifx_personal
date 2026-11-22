@@ -3,7 +3,7 @@ import { useApp } from '../context';
 import { hexToHsb, hsb2rgb, toHex } from '../color';
 import type { Pattern, Scene, ScenePattern } from '../types';
 import { LightPicker } from './LightPicker';
-import { Modal, btn, btnPrimary, btnSmall, input } from './ui';
+import { Modal, btn, btnDanger, btnPrimary, btnSmall, input } from './ui';
 
 type Mode = 'color' | 'pattern' | 'off';
 
@@ -38,7 +38,7 @@ export function SceneEditorDialog({
 }
 
 function SceneForm({ scene, onClose }: { scene: Scene | null; onClose: () => void }) {
-  const { scenes, lights, rooms, patterns, updateScenes } = useApp();
+  const { scenes, lights, rooms, patterns, updateScenes, ask } = useApp();
   const [name, setName] = useState(scene?.name ?? '');
   const [assignments, setAssignments] = useState<Assignment[]>(() => fromScene(scene, patterns));
 
@@ -64,6 +64,13 @@ function SceneForm({ scene, onClose }: { scene: Scene | null; onClose: () => voi
     }
     const item: Scene = { id: scene?.id ?? newId(), name: name.trim(), lights: sceneLights, patterns: scenePatterns };
     updateScenes(scene ? scenes.map((s) => (s.id === scene.id ? item : s)) : [...scenes, item]);
+    onClose();
+  }
+
+  function remove() {
+    if (!scene) return;
+    const id = scene.id;
+    ask(`Delete the scene "${scene.name}"?`, 'Delete', () => updateScenes(scenes.filter((x) => x.id !== id)));
     onClose();
   }
 
@@ -173,13 +180,22 @@ function SceneForm({ scene, onClose }: { scene: Scene | null; onClose: () => voi
         </button>
       </div>
 
-      <div className="flex justify-end gap-2">
-        <button type="button" className={btn} onClick={onClose}>
-          Cancel
-        </button>
-        <button type="submit" className={btnPrimary} disabled={!canSave}>
-          Save scene
-        </button>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        {scene ? (
+          <button type="button" className={btnDanger} onClick={remove}>
+            Delete scene
+          </button>
+        ) : (
+          <span />
+        )}
+        <div className="flex gap-2">
+          <button type="button" className={btn} onClick={onClose}>
+            Cancel
+          </button>
+          <button type="submit" className={btnPrimary} disabled={!canSave}>
+            Save scene
+          </button>
+        </div>
       </div>
     </form>
   );
