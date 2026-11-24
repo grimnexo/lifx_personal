@@ -8,6 +8,7 @@ import type {
   Diag,
   Favorite,
   FxKind,
+  FxOptions,
   Group,
   Light,
   Pattern,
@@ -54,10 +55,10 @@ export interface AppCtx {
   toggleOpen(id: string): void;
   setLight(mac: string, local: Partial<Light>, body?: Body): void;
   setGroupLights(g: Group, local: Partial<Light>, body: Body, now?: boolean): void;
-  powerGroup(g: Group, on: boolean): void;
+  powerGroup(g: Group, on: boolean, transition?: number): void;
   powerAll(on: boolean): void;
   applyToLights(macs: string[], body: Body, local: Partial<Light>): void;
-  startEffect(target: string, macs: string[], kind: FxKind): void;
+  startEffect(target: string, macs: string[], kind: FxKind, opts?: FxOptions): void;
   stopEffect(target: string, macs: string[]): void;
   startPattern(macs: string[], p: Pattern): void;
   stopLights(macs: string[]): void;
@@ -261,10 +262,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     queue('group:' + g.id, 'group/' + g.id, body, now);
   }
 
-  function powerGroup(g: Group, on: boolean) {
+  function powerGroup(g: Group, on: boolean, transition?: number) {
     markEdit();
     updateLights((l) => g.members.includes(l.mac), { on });
-    void api('group/' + g.id, 'POST', { power: on });
+    void api('group/' + g.id, 'POST', transition === undefined ? { power: on } : { power: on, transition });
   }
 
   function powerAll(on: boolean) {
@@ -280,8 +281,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     void api('all', 'POST', { ...body, macs });
   }
 
-  function startEffect(target: string, macs: string[], kind: FxKind) {
-    void api('effect/' + target, 'POST', { effect: kind });
+  function startEffect(target: string, macs: string[], kind: FxKind, opts: FxOptions = {}) {
+    void api('effect/' + target, 'POST', { effect: kind, ...opts });
     setFx(macs, kind);
   }
 

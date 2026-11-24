@@ -5,7 +5,8 @@ import { StatusAlerts } from '../components/StatusAlerts';
 import { Badge, PageTitle, btnPrimary, btnDanger, btnSmall, card } from '../components/ui';
 
 export function DashboardPage() {
-  const { lights, groups, schedules, rooms, sun, settings, live, connError, powerAll } = useApp();
+  const { lights, groups, schedules, rooms, sun, settings, live, connError, powerAll, stopSchedule } = useApp();
+  const running = schedules.filter((s) => s.running);
 
   const onCount = lights.filter((l) => l.on && l.online).length;
   const countText = lights.length
@@ -39,6 +40,21 @@ export function DashboardPage() {
       <StatusAlerts />
 
       <FavoritesBar />
+
+      {running.length > 0 && (
+        <section aria-labelledby="running-head" className="mt-8 grid gap-2">
+          <h2 id="running-head" className="text-[1.05rem] font-semibold">Running now</h2>
+          {running.map((s) => (
+            <div key={s.id} className={`${card} grid-cols-[minmax(0,1fr)_auto] items-center`}>
+              <span role="status">
+                {s.name}
+                {s.running && s.running.of > 1 ? ` \u00b7 step ${s.running.step} of ${s.running.of}` : ''}
+              </span>
+              <button className={btnSmall} onClick={() => void stopSchedule(s.id)}>Stop</button>
+            </div>
+          ))}
+        </section>
+      )}
 
       <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat to="/lights" label="Lights" value={lights.length} />

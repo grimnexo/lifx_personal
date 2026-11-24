@@ -4,19 +4,24 @@ import { useDisplay } from '../display';
 import { hueSat, lightHex, lightStatus } from '../color';
 import { FX, STROBE_WARN } from '../constants';
 import type { FxKind, Light } from '../types';
-import { card, kelvin, labelRow, lnk, seg, stLine, Switch, titleBtn } from './ui';
+import { card, input, kelvin, labelRow, lnk, seg, stLine, Switch, titleBtn } from './ui';
+import { FxOptionsFields, fxOptions, noFxSettings } from './FxOptionsFields';
+import type { FxSettings } from './FxOptionsFields';
 
 export function LightCard({ light: l }: { light: Light }) {
   const { isOpen, toggleOpen, setLight, startEffect, stopEffect, ask } = useApp();
   const { showIps } = useDisplay();
   const [funOpen, setFunOpen] = useState(false);
+  const [fxSettings, setFxSettings] = useState<FxSettings>(noFxSettings);
+  const [fade, setFade] = useState('');
+  const fadeBody = fade.trim() === '' ? {} : { transition: Math.min(7200, Math.max(0, Number(fade))) };
   const open = isOpen('l:' + l.mac);
   const col = l.s > 0;
   const c = l.on ? lightHex(l) : 'var(--line)';
 
   const setFx = (k: FxKind, on: boolean) => {
     if (!on) return stopEffect(l.mac, [l.mac]);
-    const go = () => startEffect(l.mac, [l.mac], k);
+    const go = () => startEffect(l.mac, [l.mac], k, fxOptions(k, fxSettings));
     if (k === 'strobe') ask(`${STROBE_WARN} It stops by itself after 30 seconds.`, 'Yes, start strobe', go);
     else go();
   };
@@ -32,7 +37,7 @@ export function LightCard({ light: l }: { light: Light }) {
             {open ? '▾' : '▸'} {l.label}
           </button>
         </h3>
-        <Switch checked={l.on} onChange={(on) => setLight(l.mac, { on }, { power: on })} label={`Power for ${l.label}`} />
+        <Switch checked={l.on} onChange={(on) => setLight(l.mac, { on }, { power: on, ...fadeBody })} label={`Power for ${l.label}`} />
         <p className={stLine}>{lightStatus(l)}</p>
         {showIps && <p className="whitespace-nowrap text-right text-[.8rem] tabular-nums text-ipc">{l.ip}</p>}
       </div>
@@ -96,6 +101,19 @@ export function LightCard({ light: l }: { light: Light }) {
             }}
           />
 
+          <label className={labelRow}>
+            Fade for power changes (seconds, blank uses Settings)
+            <input
+              type="number"
+              min={0}
+              max={7200}
+              step={0.1}
+              className={input}
+              value={fade}
+              onChange={(e) => setFade(e.target.value)}
+            />
+          </label>
+
           <div className="grid justify-items-start gap-1.5">
             <button className={lnk} aria-expanded={funOpen} onClick={() => setFunOpen(!funOpen)}>
               Fun {funOpen ? '▾' : '▸'}
@@ -110,6 +128,7 @@ export function LightCard({ light: l }: { light: Light }) {
                 ))}
               </span>
             )}
+            {funOpen && <FxOptionsFields value={fxSettings} onChange={setFxSettings} />}
           </div>
         </>
       )}
