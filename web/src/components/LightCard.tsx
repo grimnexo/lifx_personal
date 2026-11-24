@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useApp } from '../context';
+import { useDisplay } from '../display';
 import { hueSat, lightHex, lightStatus } from '../color';
 import { FX, STROBE_WARN } from '../constants';
 import type { FxKind, Light } from '../types';
@@ -7,6 +8,7 @@ import { card, kelvin, labelRow, lnk, seg, stLine, Switch, titleBtn } from './ui
 
 export function LightCard({ light: l }: { light: Light }) {
   const { isOpen, toggleOpen, setLight, startEffect, stopEffect, ask } = useApp();
+  const { showIps } = useDisplay();
   const [funOpen, setFunOpen] = useState(false);
   const open = isOpen('l:' + l.mac);
   const col = l.s > 0;
@@ -32,7 +34,7 @@ export function LightCard({ light: l }: { light: Light }) {
         </h3>
         <Switch checked={l.on} onChange={(on) => setLight(l.mac, { on }, { power: on })} label={`Power for ${l.label}`} />
         <p className={stLine}>{lightStatus(l)}</p>
-        <p className="whitespace-nowrap text-right text-[.8rem] tabular-nums text-ipc">{l.ip}</p>
+        {showIps && <p className="whitespace-nowrap text-right text-[.8rem] tabular-nums text-ipc">{l.ip}</p>}
       </div>
 
       {open && (

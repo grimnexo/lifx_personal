@@ -1,11 +1,13 @@
 import { useApp } from '../context';
+import { useDisplay } from '../display';
 import { isFx } from '../constants';
 import { actionText, nextText, whenText } from '../schedule-text';
 import type { Schedule } from '../types';
-import { btnSmall, card, stLine, Switch, titleBtn } from './ui';
+import { btnDanger, btnSmall, card, stLine, Switch, titleBtn } from './ui';
 
 export function ScheduleCard({ s }: { s: Schedule }) {
-  const { groups, settings, isOpen, toggleOpen, updateSchedules, openSchedule } = useApp();
+  const { groups, settings, isOpen, toggleOpen, updateSchedules, openSchedule, stopSchedule } = useApp();
+  const { hour24 } = useDisplay();
   const open = isOpen('s:' + s.id);
   const off = s.enabled === false;
   const c = s.action.color;
@@ -23,9 +25,15 @@ export function ScheduleCard({ s }: { s: Schedule }) {
           onChange={(en) => updateSchedules((ss) => ss.map((x) => (x.id === s.id ? { ...x, enabled: en } : x)))}
           label={`Enable ${s.name}`}
         />
-        <p className={stLine}>{whenText(s)}</p>
+        <p className={stLine}>{whenText(s, hour24)}</p>
       </div>
 
+      {s.running && (
+        <div className="flex items-center justify-between gap-2">
+          <span role="status">{s.running.of > 1 ? 'Running, step ' + s.running.step + ' of ' + s.running.of : 'Running'}</span>
+          <button className={btnDanger} onClick={() => void stopSchedule(s.id)}>Stop</button>
+        </div>
+      )}
       {open && (
         <>
           <p className="m-0">
@@ -35,7 +43,8 @@ export function ScheduleCard({ s }: { s: Schedule }) {
               actionText(s, groups)
             )}
           </p>
-          <p className={`m-0 ${stLine}`}>{nextText(s, settings)}</p>
+          {!!s.steps?.length && <p className={stLine}>{s.steps.length + 1} routine steps</p>}
+          {!s.running && <p className={`m-0 ${stLine}`}>{nextText(s, settings, hour24)}</p>}
           <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
             <div className="justify-self-start">
               <button className={btnSmall} onClick={() => openSchedule(s)}>

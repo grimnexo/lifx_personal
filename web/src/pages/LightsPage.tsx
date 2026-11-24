@@ -1,10 +1,11 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useApp } from '../context';
 import { lightHex, lightStatus } from '../color';
 import { LightCard } from '../components/LightCard';
 import { MiniCard } from '../components/MiniCard';
 import { StatusAlerts } from '../components/StatusAlerts';
-import { Badge, PageTitle, Sortable, btnPrimary, btnSmall, grid } from '../components/ui';
+import { Badge, PageTitle, Sortable, btnPrimary, btnDanger, btnSmall, grid } from '../components/ui';
 
 export function LightsPage() {
   const { lights, live, connError, powerAll, saveOrder } = useApp();
@@ -21,12 +22,13 @@ export function LightsPage() {
     <>
       <PageTitle title="Lights" subtitle={subtitle}>
         <Badge tone={live ? 'ok' : 'warn'}>{live ? 'Live' : 'Reconnecting'}</Badge>
-        <button className={btnPrimary} onClick={() => powerAll(true)}>
-          Turn all on
-        </button>
-        <button className={btnSmall} onClick={() => powerAll(false)}>
-          Turn all off
-        </button>
+        <div className="grid gap-2">
+          <div className="flex gap-2">
+            <button className={btnPrimary} onClick={() => powerAll(true)}>Turn all on</button>
+            <button className={btnDanger} onClick={() => powerAll(false)}>Turn all off</button>
+          </div>
+          <Link to="/settings" className={btnSmall}>Settings</Link>
+        </div>
         {lights.length > 0 && (
           <button className={btnSmall} onClick={() => setEditing((e) => !e)}>
             {editing ? 'Done' : 'Reorder'}
