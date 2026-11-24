@@ -15,21 +15,21 @@ export function ScheduleDialog() {
 }
 
 function ScheduleForm({ initial, onClose }: { initial: Schedule | null; onClose: () => void }) {
-  const { groups, updateSchedules, runSchedule, settings, ask } = useApp();
+  const { groups, schedules, updateSchedules, runSchedule, stopSchedule, settings, ask } = useApp();
   const [base] = useState<Schedule>(
     () =>
       initial ?? {
         id: 's' + Date.now().toString(36),
         enabled: true,
         name: '',
-        when: { type: 'time', time: '02:00', offset: 0 },
+        when: { type: 'time', time: '06:00', offset: 0 },
         days: [0, 1, 2, 3, 4, 5, 6],
         action: { type: 'off', target: 'all' },
       },
   );
   const [name, setName] = useState(base.name);
   const [wType, setWType] = useState(base.when.type);
-  const [time, setTime] = useState(base.when.time ?? '02:00');
+  const [time, setTime] = useState(base.when.time ?? '06:00');
   const [offset, setOffset] = useState(String(base.when.offset ?? 0));
   const [days, setDays] = useState<number[]>(base.days);
   const [act, setAct] = useState<ActionType>(base.action.type);
@@ -40,6 +40,10 @@ function ScheduleForm({ initial, onClose }: { initial: Schedule | null; onClose:
   const [color, setColor] = useState(base.action.color?.hex ?? '#ff0000');
   const [bri, setBri] = useState(String(base.action.color?.b ?? 100));
   const [msg, setMsg] = useState('');
+  const [fade, setFade] = useState(String(base.action.fade ?? ''));
+  const [steps, setSteps] = useState(() => structuredClone(base.steps ?? []));
+  const running = schedules.find((s) => s.id === base.id)?.running;
+  const editStep = (i: number, patch: Partial<NonNullable<Schedule['steps']>[number]>) => setSteps((ss) => ss.map((s, j) => j === i ? { ...s, ...patch } : s));
 
   const optionsFor = (a: string) => {
     const preOnly = a === 'preset';
@@ -63,8 +67,9 @@ function ScheduleForm({ initial, onClose }: { initial: Schedule | null; onClose:
   };
 
   const buildAction = (): Action => {
-    if (act === 'preset') return { type: act, target: curTarget, preset: curPreset };
-    if (!fx) return { type: act, target: curTarget };
+    const timing = fade === '' ? {} : { fade: Math.min(7200, Math.max(0, Number(fade) || 0)) };
+    if (act === 'preset') return { type: act, target: curTarget, preset: curPreset, ...timing };
+    if (!fx) return { type: act, target: curTarget, ...timing };
     const [h, s] = hueSat(color);
     const cl = (v: string, lo: number, hi: number, d: number) => Math.min(hi, Math.max(lo, Number(v) || d));
     return {
@@ -78,8 +83,9 @@ function ScheduleForm({ initial, onClose }: { initial: Schedule | null; onClose:
   };
 
   const save = (strobeOk = false): void => {
-    if (act === 'strobe' && !strobeOk) return ask(STROBE_WARN, 'Yes, save strobe schedule', () => save(true));
+    if ((act === 'strobe' || steps.some((s) => s.action.type === 'strobe')) && !strobeOk) return ask(STROBE_WARN, 'Yes, save strobe schedule', () => save(true));
     if (act === 'preset' && !curPreset) return setMsg('Choose a group that has a saved preset.');
+    if (steps.some((s) => s.action.type === 'preset' && !groups.find((g) => g.id === s.action.target)?.presets?.some((p) => p.id === s.action.preset))) return setMsg('Choose a valid preset for each routine step.');
     if (!days.length) return setMsg('Pick at least one day.');
     if (wType === 'time' && !time) return setMsg('Enter a time.');
     const next: Schedule = {
@@ -88,6 +94,7 @@ function ScheduleForm({ initial, onClose }: { initial: Schedule | null; onClose:
       when: { type: wType, time, offset: Number(offset) || 0 },
       days,
       action: buildAction(),
+      steps,
     };
     updateSchedules((ss) =>
       ss.some((x) => x.id === base.id) ? ss.map((x) => (x.id === base.id ? next : x)) : [...ss, next],
@@ -107,8 +114,8 @@ function ScheduleForm({ initial, onClose }: { initial: Schedule | null; onClose:
     );
 
   const run = async () => {
-    const r = await runSchedule(base.id);
-    setMsg(r.ok ? 'Ran it now.' : 'Save the schedule first.');
+    const r = running ? await stopSchedule(base.id) : await runSchedule(base.id);
+    setMsg(r.ok ? running ? 'Stopped.' : 'Started.' : r.error ?? 'Unable to change routine state.');
   };
 
   const toggleDay = (i: number, on: boolean) =>
@@ -177,12 +184,15 @@ function ScheduleForm({ initial, onClose }: { initial: Schedule | null; onClose:
             <select className={input} value={curPreset} onChange={(e) => setPreset(e.target.value)}>
               {presets.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.name}
+                  {p.name}{p.hidden ? ' (hidden)' : ''}
                 </option>
               ))}
             </select>
           </label>
         )}
+        {!fx && <label className={labelRow}>Fade seconds (blank = default)
+          <input type="number" min={0} max={7200} step={0.1} className={input} value={fade} onChange={(e) => setFade(e.target.value)} />
+        </label>}
         {fx && !isSecs(act) && (
           <label className={labelRow}>
             Times
@@ -212,6 +222,13 @@ function ScheduleForm({ initial, onClose }: { initial: Schedule | null; onClose:
         )}
       </Fieldset>
 
+      {steps.map((step, i) => <RoutineStep key={i} step={step} index={i} optionsFor={optionsFor}
+        onChange={(patch) => editStep(i, patch)} onRemove={() => {
+          const remove = () => setSteps((ss) => ss.filter((_, j) => j !== i));
+          ask('Remove this routine step?', 'Yes, remove', remove, true);
+        }} />)}
+      <button type="button" className={btnSmall} onClick={() => setSteps((ss) => [...ss, { delay: 0, action: { type: 'off', target: 'all' } }])}>+ Add step</button>
+
       <small role="status" className="mb-2 block min-h-4 text-mut">
         {msg}
       </small>
@@ -223,7 +240,7 @@ function ScheduleForm({ initial, onClose }: { initial: Schedule | null; onClose:
                 Delete
               </button>
               <button className={btn} onClick={run}>
-                Run now
+                {running ? 'Stop' : 'Run now'}
               </button>
             </>
           )}
@@ -239,4 +256,63 @@ function ScheduleForm({ initial, onClose }: { initial: Schedule | null; onClose:
       </div>
     </>
   );
+}
+
+type Step = NonNullable<Schedule['steps']>[number];
+
+function RoutineStep({ step, index, optionsFor, onChange, onRemove }: {
+  step: Step;
+  index: number;
+  optionsFor: (type: string) => { id: string; label: string }[];
+  onChange: (patch: Partial<Step>) => void;
+  onRemove: () => void;
+}) {
+  const { groups } = useApp();
+  const a = step.action;
+  const fx = isFx(a.type);
+  const patch = (p: Partial<Action>) => onChange({ action: { ...a, ...p } });
+  const choices = optionsFor(a.type);
+  const presets = groups.find((g) => g.id === a.target)?.presets ?? [];
+  const number = (v: string, min: number, max: number) => Math.min(max, Math.max(min, Number(v) || min));
+  return <Fieldset legend={'Step ' + (index + 2)}>
+    <label className={labelRow}>Seconds after previous step completes
+      <input type="number" className={input} min={0} max={86400} step={0.1} value={step.delay} onChange={(e) => onChange({ delay: number(e.target.value, 0, 86400) })} />
+    </label>
+    <label className={labelRow}>Action
+      <select className={input} value={a.type} onChange={(e) => {
+        const type = e.target.value as ActionType;
+        const target = optionsFor(type)[0]?.id ?? 'all';
+        const preset = groups.find((g) => g.id === target)?.presets?.[0]?.id;
+        onChange({ action: { type, target, ...(type === 'preset' ? { preset } : {}), ...(isFx(type) ? { times: 3, seconds: type === 'flicker' ? 60 : 5, color: { hex: '#ff0000', h: 0, s: 100, b: 100, k: 3500 } } : {}) } });
+      }}>
+        {ACTION_LABELS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+      </select>
+    </label>
+    <label className={labelRow}>Lights
+      <select className={input} value={a.target} onChange={(e) => patch({ target: e.target.value, preset: groups.find((g) => g.id === e.target.value)?.presets?.[0]?.id })}>
+        {choices.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+      </select>
+    </label>
+    {a.type === 'preset' && <label className={labelRow}>Preset
+      <select className={input} value={a.preset ?? ''} onChange={(e) => patch({ preset: e.target.value })}>
+        <option value="">Choose preset</option>
+        {presets.map((p) => <option key={p.id} value={p.id}>{p.name}{p.hidden ? ' (hidden)' : ''}</option>)}
+      </select>
+    </label>}
+    {!fx && <label className={labelRow}>Fade seconds (blank = default)
+      <input type="number" min={0} max={7200} step={0.1} className={input} value={a.fade ?? ''} onChange={(e) => patch({ fade: e.target.value === '' ? undefined : number(e.target.value, 0, 7200) })} />
+    </label>}
+    {fx && <>
+      <label className={labelRow}>{isSecs(a.type) ? 'Seconds' : 'Times'}
+        <input type="number" min={1} max={a.type === 'strobe' ? 60 : a.type === 'flicker' ? 3600 : 1000} className={input} value={isSecs(a.type) ? a.seconds ?? 5 : a.times ?? 3} onChange={(e) => patch(isSecs(a.type) ? { seconds: number(e.target.value, 1, a.type === 'strobe' ? 60 : 3600) } : { times: number(e.target.value, 1, 1000) })} />
+      </label>
+      <label className={labelRow}>Color
+        <input type="color" value={a.color?.hex ?? '#ff0000'} onChange={(e) => { const [h, s] = hueSat(e.target.value); patch({ color: { hex: e.target.value, h, s, b: a.color?.b ?? 100, k: 3500 } }); }} />
+      </label>
+      <label className={labelRow}>Brightness (%)
+        <input type="number" min={1} max={100} className={input} value={a.color?.b ?? 100} onChange={(e) => patch({ color: { ...(a.color ?? { hex: '#ff0000', h: 0, s: 100, k: 3500 }), b: number(e.target.value, 1, 100) } })} />
+      </label>
+    </>}
+    <button type="button" className={btnSmall} onClick={onRemove}>Remove step</button>
+  </Fieldset>;
 }

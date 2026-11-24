@@ -1,9 +1,9 @@
 name: Installer checks
 on:
   push:
-    paths: [manage.sh, scripts/**, tests/**, Dockerfile, compose.yaml, compose.host.yaml, .dockerignore, .gitattributes, .editorconfig, hl_lifx_control.py, lifx_db.py]
+    paths: [manage.sh, scripts/**, tests/**, Dockerfile, compose.yaml, compose.host.yaml, .dockerignore, .gitattributes, .editorconfig, hl_lifx_control.py, lifx_db.py, web/**, .github/workflows/installer-ci.yml]
   pull_request:
-    paths: [manage.sh, scripts/**, tests/**, Dockerfile, compose.yaml, compose.host.yaml, .dockerignore, .gitattributes, .editorconfig, hl_lifx_control.py, lifx_db.py]
+    paths: [manage.sh, scripts/**, tests/**, Dockerfile, compose.yaml, compose.host.yaml, .dockerignore, .gitattributes, .editorconfig, hl_lifx_control.py, lifx_db.py, web/**, .github/workflows/installer-ci.yml]
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -22,3 +22,19 @@ jobs:
       - name: Verify host mode has no Docker-published ports
         run: |
           PORT=9000 docker compose -f compose.host.yaml config --format json | python3 -c 'import json,sys; service=json.load(sys.stdin)["services"]["lifx"]; assert service["network_mode"] == "host"; assert not service.get("ports"); assert service["environment"]["PORT"] == "9000"'
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+        working-directory: web
+      - run: npm run build
+        working-directory: web
+      - run: npm run lint
+        working-directory: web

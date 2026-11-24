@@ -28,6 +28,7 @@ export interface Preset {
   id: string;
   name: string;
   lights: Record<string, LightSnap>;
+  hidden?: boolean;
 }
 
 export interface PatternStep {
@@ -67,6 +68,7 @@ export interface Action {
   times?: number;
   seconds?: number;
   color?: Color;
+  fade?: number;
 }
 
 export interface Room {
@@ -104,6 +106,8 @@ export interface Schedule {
   when: { type: 'time' | 'sunrise' | 'sunset'; time?: string; offset?: number };
   days: number[];
   action: Action;
+  steps?: { delay: number; action: Action }[];
+  running?: { step: number; of: number } | null;
   runs?: number;
   manual_runs?: number;
   next?: string | null;
@@ -142,6 +146,7 @@ export interface AppState {
   patterns: Pattern[];
   favorites: Favorite[];
   sun: Sun | null;
+  server_time?: { epoch: number; utc_offset: number; hms: string };
   settings: Settings;
   version?: string;
   diag?: Diag;

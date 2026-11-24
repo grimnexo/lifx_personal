@@ -1,10 +1,11 @@
 import { useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useApp } from '../context';
+import { useDisplay } from '../display';
 import { plural } from '../constants';
 import { APP_ICONS, APP_ICON_LABELS, DEFAULT_LABEL, LABEL_MAX, brandLabel, iconFromFile, updateBranding, useBranding, type AppIcon } from '../branding';
 import { BrandTile } from '../components/BrandTile';
 import type { Group, LightIp, Settings } from '../types';
-import { Field, PageTitle, Switch, btnPrimary, btnSmall, card, input, lnk } from '../components/ui';
+import { Field, PageTitle, Switch, btnPrimary, btnSmall, card, input, lnk, Sortable } from '../components/ui';
 
 interface Form {
   broadcast: string;
@@ -32,6 +33,7 @@ const TABS = [
   { id: 'location', label: 'Location' },
   { id: 'groups', label: 'Groups' },
   { id: 'application', label: 'Application' },
+  { id: 'display', label: 'Display' },
 ] as const;
 
 type TabId = (typeof TABS)[number]['id'];
@@ -273,6 +275,7 @@ function SettingsForm() {
 
           {tab === 'groups' && <GroupsCard />}
           {tab === 'application' && <ApplicationCard />}
+          {tab === 'display' && <DisplayCard />}
         </div>
 
         <div className="flex flex-wrap items-center justify-end gap-3">
@@ -698,23 +701,41 @@ function LightAddressesCard() {
   );
 }
 
+function DisplayCard() {
+  const { showIps, hour24, update } = useDisplay();
+  return <section className={card} aria-label="Display preferences">
+    <h2 className="text-lg font-semibold">Display</h2>
+    <p className="text-mut">These settings are remembered on this browser.</p>
+    <label className="flex items-center justify-between gap-2">
+      Show light IP addresses on cards
+      <Switch checked={showIps} onChange={(v) => update({ showIps: v })} label="Show light IP addresses on cards" />
+    </label>
+    <label className="flex items-center justify-between gap-2">
+      Use 24-hour time
+      <Switch checked={hour24} onChange={(v) => update({ hour24: v })} label="Use 24-hour time" />
+    </label>
+  </section>;
+}
+
 function GroupsCard() {
-  const { groups, lights, schedules, updateGroups, updateSchedules, ask } = useApp();
+  const { groups, lights, schedules, updateGroups, updateSchedules, ask, saveOrder } = useApp();
   const [newGroup, setNewGroup] = useState('');
+  const [expanded, setExpanded] = useState<string[]>([]);
+  const targets = (s: typeof schedules[number], gid: string) => s.action.target === gid || !!s.steps?.some((step) => step.action.target === gid);
 
   const editGroup = (gid: string, fn: (g: Group) => Group) =>
     updateGroups((gs) => gs.map((x) => (x.id === gid ? fn(x) : x)));
 
   const removeGroup = (gid: string) => {
     updateGroups((gs) => gs.filter((x) => x.id !== gid));
-    if (schedules.some((s) => s.action.target === gid))
-      updateSchedules((ss) => ss.filter((s) => s.action.target !== gid));
+    if (schedules.some((s) => targets(s, gid)))
+      updateSchedules((ss) => ss.filter((s) => !targets(s, gid)));
   };
 
   const deleteGroup = (g: Group) => {
     const name = g.name || 'this group';
     const np = (g.presets ?? []).length;
-    const ns = schedules.filter((s) => s.action.target === g.id).length;
+    const ns = schedules.filter((s) => targets(s, g.id)).length;
     const final = () => ask(`Delete the group \u201c${name}\u201d? This can\u2019t be undone.`, 'Yes, delete', () => removeGroup(g.id));
     if (!np && !ns) return final();
     const parts = [np ? plural(np, 'preset') : '', ns ? plural(ns, 'schedule') : ''].filter(Boolean).join(' and ');
@@ -741,9 +762,17 @@ function GroupsCard() {
         <p className="m-0 text-[.9rem] text-mut">Control several lights together. Group changes save as you make them.</p>
       </div>
       {groups.length === 0 && <p className="m-0 text-mut">No groups yet.</p>}
-      <div className="grid gap-3 md:grid-cols-2">
-        {groups.map((g) => (
-          <div key={g.id} className="grid content-start gap-2.5 rounded-xl border border-line p-3">
+      <Sortable ids={groups.map((g) => g.id)} onCommit={(ids) => saveOrder('groups', ids)} className="grid gap-3">
+        {(id, grip, dragging) => {
+          const g = groups.find((item) => item.id === id);
+          if (!g) return null;
+          const open = expanded.includes(id);
+          return <div className={`grid content-start gap-2.5 rounded-xl border border-line p-3 ${dragging ? 'ring-2 ring-acc' : ''}`}>
+            <div className="flex items-center gap-2">
+              {grip('cursor-grab px-2 py-1 text-mut', g.name)}
+              <button type="button" className="flex-1 text-left" aria-expanded={open} onClick={() => setExpanded((v) => open ? v.filter((x) => x !== id) : [...v, id])}>{open ? '▾' : '▸'} {g.name}{g.hidden ? ' (hidden)' : ''}</button>
+            </div>
+            {open && <>
             <div className="flex gap-2">
               <input
                 className={`${input} flex-1`}
@@ -781,9 +810,10 @@ function GroupsCard() {
                 </label>
               ))}
             </div>
-          </div>
-        ))}
-      </div>
+            </>}
+          </div>;
+        }}
+      </Sortable>
       <div className="flex flex-wrap gap-2">
         <input
           className={`${input} max-w-xs flex-1`}

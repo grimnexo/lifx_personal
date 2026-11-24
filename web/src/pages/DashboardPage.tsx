@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { useApp } from '../context';
 import { FavoritesBar } from '../components/FavoritesBar';
 import { StatusAlerts } from '../components/StatusAlerts';
-import { Badge, PageTitle, btnPrimary, btnSmall, card } from '../components/ui';
+import { Badge, PageTitle, btnPrimary, btnDanger, btnSmall, card } from '../components/ui';
 
 export function DashboardPage() {
   const { lights, groups, schedules, rooms, sun, settings, live, connError, powerAll } = useApp();
@@ -27,12 +27,13 @@ export function DashboardPage() {
     <>
       <PageTitle title="Dashboard" subtitle={subtitle}>
         <Badge tone={live ? 'ok' : 'warn'}>{live ? 'Live' : 'Reconnecting'}</Badge>
-        <button className={btnPrimary} onClick={() => powerAll(true)}>
-          Turn all on
-        </button>
-        <button className={btnSmall} onClick={() => powerAll(false)}>
-          Turn all off
-        </button>
+        <div className="grid gap-2">
+          <div className="flex gap-2">
+            <button className={btnPrimary} onClick={() => powerAll(true)}>Turn all on</button>
+            <button className={btnDanger} onClick={() => powerAll(false)}>Turn all off</button>
+          </div>
+          <Link to="/settings" className={btnSmall}>Settings</Link>
+        </div>
       </PageTitle>
 
       <StatusAlerts />

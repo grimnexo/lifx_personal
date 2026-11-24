@@ -1,15 +1,18 @@
 import { useEffect, useState } from 'react';
 import { useApp } from '../context';
+import { reorderSubset } from '../order';
 import { colorRgb, snapshotOf, toHex } from '../color';
 import { NO_LIGHTS_TO_SAVE } from '../constants';
 import type { Group, LightSnap, Preset } from '../types';
-import { btnPrimary, btnSmall, input, labelRow, Sortable } from './ui';
+import { btnPrimary, btnSmall, input, labelRow, Sortable, Switch } from './ui';
 
 const swatch = (c: LightSnap) => toHex(colorRgb(c));
 
 export function PresetPanel({ g }: { g: Group }) {
   const { lights, updateGroups, applyPreset, ask } = useApp();
   const presets = g.presets ?? [];
+  const [showHidden, setShowHidden] = useState(false);
+  const visible = presets.filter((p) => showHidden || !p.hidden);
   const [detail, setDetail] = useState<string[]>([]);
   const [menu, setMenu] = useState<string | null>(null);
   const [flashId, setFlashId] = useState<string | null>(null);
@@ -74,8 +77,8 @@ export function PresetPanel({ g }: { g: Group }) {
     <div className="grid gap-3 border-t border-line pt-3">
       {presets.length === 0 && <p className="text-mut">No presets yet. Set the lights how you like, then add one.</p>}
       <Sortable
-        ids={presets.map((p) => p.id)}
-        onCommit={(ids) => edit((ps) => ids.flatMap((id) => ps.find((p) => p.id === id) ?? []))}
+        ids={visible.map((p) => p.id)}
+        onCommit={(ids) => edit((ps) => reorderSubset(ps, ids))}
         className="grid"
       >
         {(id, grip, dragging) => {
@@ -94,7 +97,7 @@ export function PresetPanel({ g }: { g: Group }) {
                   title="Apply preset"
                   onClick={() => applyPreset(g, p)}
                 >
-                  <span className="truncate">{p.name}</span>
+                  <span className="truncate">{p.name}{p.hidden ? ' (hidden)' : ''}</span>
                   <span aria-hidden="true">{flashId === p.id ? 'Saved \u2713' : '\u25b8'}</span>
                 </button>
                 <div className="relative flex-none" data-menu>
@@ -139,6 +142,10 @@ export function PresetPanel({ g }: { g: Group }) {
                       onBlur={(e) => rename(p.id, e.target.value.trim() || p.name)}
                     />
                   </label>
+                  <div className="flex items-center justify-between gap-2">
+                    <span>Hide preset (still available in routines)</span>
+                    <Switch small checked={!!p.hidden} label={`Hide ${p.name}`} onChange={(hidden) => edit((ps) => ps.map((x) => x.id === p.id ? { ...x, hidden } : x))} />
+                  </div>
                   <div className="flex">
                     <button className={btnSmall} onClick={() => overwrite(p)}>
                       Save current settings
@@ -150,9 +157,10 @@ export function PresetPanel({ g }: { g: Group }) {
           );
         }}
       </Sortable>
-      <button className={`${btnSmall} justify-self-start`} aria-label="New preset from current settings" onClick={add}>
-        + New preset
-      </button>
+      <div className="flex justify-between gap-2">
+        <button className={btnSmall} aria-label="New preset from current settings" onClick={add}>+ New preset</button>
+        <button className={btnSmall} aria-pressed={showHidden} onClick={() => setShowHidden(!showHidden)}>{showHidden ? 'Hide hidden presets' : 'Show hidden presets'}</button>
+      </div>
     </div>
   );
 }

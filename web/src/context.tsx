@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { api } from './api';
+import { reorderSubset } from './order';
 import { subscribeLights } from './events';
 import type {
   ApiResult,
@@ -41,6 +42,7 @@ export interface AppCtx {
   patterns: Pattern[];
   favorites: Favorite[];
   sun: Sun | null;
+  serverTime?: AppState['server_time'];
   settings: Settings;
   version?: string;
   diag?: Diag;
@@ -72,6 +74,7 @@ export interface AppCtx {
   saveOrder(key: SectionKey, ids: string[]): void;
   saveSettings(patch: Body): Promise<ApiResult>;
   runSchedule(id: string): Promise<ApiResult>;
+  stopSchedule(id: string): Promise<ApiResult>;
   refresh(): Promise<void>;
   ask(text: string, yes: string, run: () => void, equal?: boolean): void;
   confirm: Confirm | null;
@@ -165,12 +168,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setData((d) => ({
       lights: keepEdits ? d.lights : s.lights ?? [],
       groups: keepSaved ? d.groups : s.groups ?? [],
-      schedules: keepSaved ? d.schedules : s.schedules ?? [],
+      schedules: keepSaved ? d.schedules.map((x) => ({ ...x, running: s.schedules?.find((y) => y.id === x.id)?.running ?? null })) : s.schedules ?? [],
       rooms: keepSaved ? d.rooms : s.rooms ?? [],
       scenes: keepSaved ? d.scenes : s.scenes ?? [],
       patterns: keepSaved ? d.patterns : s.patterns ?? [],
       favorites: keepSaved ? d.favorites : s.favorites ?? [],
       sun: s.sun ?? null,
+      server_time: s.server_time,
       settings: keepSaved && s.settings ? { ...s.settings, light_order: d.settings.light_order } : s.settings ?? d.settings,
       version: s.version,
       diag: s.diag,
@@ -183,7 +187,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // Light state arrives over the live stream; the full state poll then runs about every 14 s instead of every 2 s.
     const t = window.setInterval(() => {
       tick += 1;
-      if (!liveRef.current || tick % 7 === 0) void refresh();
+      if (!liveRef.current || dataRef.current.schedules.some((s) => s.running) || tick % 7 === 0) void refresh();
     }, 2000);
     const onVisible = () => {
       if (!document.hidden) void refresh();
@@ -383,16 +387,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     dataRef.current = { ...dataRef.current, schedules };
     markSave();
     setData((d) => ({ ...d, schedules }));
-    void api('schedules', 'PUT', { schedules: schedules.map((s) => ({ ...s, next: undefined })) });
+    void api('schedules', 'PUT', { schedules: schedules.map((s) => ({ ...s, next: undefined, running: undefined })) });
     window.setTimeout(() => void refresh(), 2700);
   }
 
   function saveOrder(key: SectionKey, ids: string[]) {
     if (key === 'groups') {
-      updateGroups((gs) => {
-        const byId = new Map(gs.map((g) => [g.id, g]));
-        return [...ids.flatMap((id) => byId.get(id) ?? []), ...gs.filter((g) => g.hidden)];
-      });
+      updateGroups((gs) => reorderSubset(gs, ids));
     } else if (key === 'schedules') {
       updateSchedules((ss) => {
         const byId = new Map(ss.map((s) => [s.id, s]));
@@ -411,13 +412,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   async function runSchedule(id: string): Promise<ApiResult> {
     const r = await api('schedule/' + id + '/run');
-    if (r.ok) {
-      markSave();
-      setData((d) => ({
-        ...d,
-        schedules: d.schedules.map((s) => (s.id === id ? { ...s, manual_runs: (s.manual_runs ?? 0) + 1 } : s)),
-      }));
-    }
+    if (r.ok) await refresh();
+    return r;
+  }
+
+  async function stopSchedule(id: string): Promise<ApiResult> {
+    const r = await api('schedule/' + id + '/stop');
+    await refresh();
     return r;
   }
 
@@ -447,6 +448,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     patterns: data.patterns,
     favorites: data.favorites,
     sun: data.sun,
+    serverTime: data.server_time,
     settings: data.settings,
     version: data.version,
     diag: data.diag,
@@ -478,6 +480,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     saveOrder,
     saveSettings,
     runSchedule,
+    stopSchedule,
     refresh,
     ask: (text, yes, run, equal = false) => setConfirm({ text, yes, run, equal }),
     confirm,

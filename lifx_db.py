@@ -2,6 +2,7 @@
 
 Standard library only. The database file is lifx.db beside hl_lifx_control.py."""
 import hashlib, json, sqlite3, threading, time
+from pathlib import Path
 
 LIST_KEYS = ('groups', 'schedules', 'rooms', 'scenes', 'favorites', 'patterns')
 DATA_KEYS = ('settings',) + LIST_KEYS
@@ -148,3 +149,47 @@ class Store:
                 u.setdefault('name', u['username'])
                 self.conn.execute(UPSERT_USER, _user_values(u))
             self._write_data({k: data[k] for k in DATA_KEYS if k in data})
+
+
+def read_legacy_config(directory):
+    """Read upstream 2.x split files or a 1.x monolithic file without modifying them."""
+    root = Path(directory)
+    def read(path):
+        with path.open(encoding='utf-8') as source:
+            value = json.load(source)
+        if not isinstance(value, dict):
+            raise ValueError(f'{path}: expected a JSON object')
+        return value
+
+    paths = {key: root / '.config' / (key + '.json') for key in ('config', 'devices', 'routines')}
+    if any(path.exists() for path in paths.values()):
+        c, d, r = (read(paths[key]) if paths[key].exists() else {} for key in paths)
+        settings = dict(c)
+        if 'light_order' in d:
+            if not isinstance(d['light_order'], list):
+                raise ValueError('devices.json: light_order must be a list')
+            settings['light_order'] = d['light_order']
+        data = {'settings': settings}
+        for source, key in ((d, 'groups'), (r, 'schedules')):
+            if key in source:
+                if not isinstance(source[key], list):
+                    raise ValueError(f'{key} must be a list')
+                data[key] = source[key]
+        return data, str(root / '.config')
+    for name in ('config.json', 'data.json'):
+        path = root / name
+        if path.exists():
+            return read(path), str(path)
+    return None, None
+
+
+def import_legacy_if_empty(store, directory):
+    """Initialize SQLite once; never overwrite an existing database or source files."""
+    if store.has_app_data() or store.user_count():
+        return False
+    data, source = read_legacy_config(directory)
+    if data is None:
+        return False
+    store.import_legacy(data)
+    print(f'Imported existing configuration from {source}; original files retained.')
+    return True

@@ -209,17 +209,19 @@ export function Sortable({
     setLive(shown);
     document.body.style.cursor = 'grabbing';
     document.body.style.userSelect = 'none';
+    let lastOver: string | undefined;
     const move = (ev: globalThis.PointerEvent) => {
       const over = document
         .elementFromPoint(ev.clientX, ev.clientY)
         ?.closest<HTMLElement>('[data-sort-id]')?.dataset.sortId;
       const cur = liveRef.current;
-      if (!cur || !over || over === id || !cur.includes(over)) return;
+      if (!cur || !over || over === id || over === lastOver || !cur.includes(over)) return;
+      lastOver = over;
       const next = arrayMove(cur, cur.indexOf(id), cur.indexOf(over));
       liveRef.current = next;
       setLive(next);
     };
-    const end = () => {
+    const end = (ev: globalThis.PointerEvent) => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', end);
       window.removeEventListener('pointercancel', end);
@@ -229,7 +231,7 @@ export function Sortable({
       liveRef.current = null;
       setActive(null);
       setLive(null);
-      if (fin && fin.join('\n') !== ids.join('\n')) onCommit(fin);
+      if (ev.type !== 'pointercancel' && fin && fin.join('\n') !== ids.join('\n')) onCommit(fin);
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', end);
