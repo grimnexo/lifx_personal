@@ -4,6 +4,13 @@ Each release lists what changed and which files were updated. Newest first.
 
 Versions use `MAJOR.MINOR.PATCH`: MAJOR for changes that break `config.json` or the API, MINOR for new features, PATCH for fixes. The version is set in `hl_lifx_control.py` (`VERSION`) and shown in Settings.
 
+## Unreleased — upstream 2.0.1 integration
+
+### Backend integration
+- Port upstream multi-step routines, per-action fades, smooth power-on color transitions, run cancellation and runtime progress, and server clock metadata.
+- Import upstream split `.config/` data into a new SQLite database (preserving original files, accounts and all existing fork data). Keep the native/Docker installer and authentication.
+- Original project: [Pyromancer3D/lifx_personal](https://github.com/Pyromancer3D/lifx_personal), upstream commits through `72cb2e2`.
+
 ## 1.1.0 - 2026-11-20
 
 ### Added

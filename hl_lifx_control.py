@@ -4,7 +4,7 @@ Standard library only (Python 3.8+). See README.md."""
 import datetime as dt, hashlib, hmac, ipaddress, json, math, mimetypes, os, random, re, secrets, socket, sqlite3, struct, threading, time
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from lifx_db import DATA_KEYS, LIST_KEYS, Store
+from lifx_db import DATA_KEYS, LIST_KEYS, Store, import_legacy_if_empty
 
 VERSION = '1.1.0'  # bump on every release and add an entry to CHANGELOG.md
 PORT = int(os.environ.get('PORT', 8080))
@@ -15,26 +15,9 @@ DIST = os.path.join(HERE, 'web', 'dist')  # built by `npm run build` in web/
 DATA_DIR = os.path.abspath(os.environ.get('LIFX_DATA_DIR') or HERE)
 os.makedirs(DATA_DIR, exist_ok=True)
 DB_FILE = os.path.join(DATA_DIR, 'lifx.db')
-LEGACY_FILES = (os.path.join(DATA_DIR, 'config.json'), os.path.join(DATA_DIR, 'data.json'))  # JSON config from earlier versions
-
-
-def read_legacy():
-    for path in LEGACY_FILES:
-        if os.path.exists(path):
-            try:
-                with open(path) as f:
-                    return json.load(f)
-            except (OSError, ValueError) as e:
-                print(f'Could not read {os.path.basename(path)}: {e}')
-    return None
-
-
 store = Store(DB_FILE)
-if not store.has_app_data() and store.user_count() == 0:
-    legacy = read_legacy()
-    if legacy is not None:
-        store.import_legacy(legacy)
-        print(f'Imported settings and accounts into {os.path.basename(DB_FILE)}')
+import_legacy_if_empty(store, DATA_DIR)
+
 
 def clean_light_ips(items):
     out, seen = [], set()
@@ -301,29 +284,46 @@ def u16(v, mx):
     return max(0, min(65535, round(v / mx * 65535)))
 
 
-def set_light(d, c):
+def set_light(d, c, dur=None):
+    """Apply color and/or power changes. dur is the fade in ms (default: the Settings fade time)."""
     d['fx_until'] = 0  # manual control cancels our idea of a running effect
     d.pop('fx', None)
     d.pop('fl', None)
-    dur = round(db['settings']['transition'] * 1000)
+    d.pop('pattern', None)
+    if dur is None:
+        dur = round(db['settings']['transition'] * 1000)
+    turning_on = c.get('power') is True and not d.get('on')
     if any(k in c for k in ('h', 's', 'b', 'k')):
         h = c.get('h', d['h'] / 65535 * 360)
         s = c.get('s', d['s'] / 65535 * 100)
         b = c.get('b', d['b'] / 65535 * 100)
         k = int(max(1500, min(9000, c.get('k', d['k']))))
         hh, ss, bb = u16(h % 360, 360), u16(s, 100), u16(b, 100)
-        tx(packet(102, d['mac'], struct.pack('<BHHHHI', 0, hh, ss, bb, k, dur)), d['ip'])
+        # a light that is off and about to turn on gets its color instantly, so the power-on fade rises smoothly to it
+        tx(packet(102, d['mac'], struct.pack('<BHHHHI', 0, hh, ss, bb, k, 0 if turning_on else dur)), d['ip'])
         d.update(h=hh, s=ss, b=bb, k=k)
     if 'power' in c:
         tx(packet(117, d['mac'], struct.pack('<HI', 65535 if c['power'] else 0, dur)), d['ip'])
         d['on'] = bool(c['power'])
 
 
+def clamp_secs(v, hi):
+    try:
+        v = float(v)
+        return max(0.0, min(float(hi), v)) if math.isfinite(v) else None
+    except (TypeError, ValueError):
+        return None
+
+
 def apply(macs, c):
+    """Apply changes to lights. An optional 'transition' (seconds, max 7200) overrides the default fade for this call."""
+    c = dict(c)
+    t = clamp_secs(c.pop('transition', None), 7200)
+    dur = None if t is None else round(t * 1000)
     with lock:
         for m in macs:
             if m in devices:
-                set_light(devices[m], c)
+                set_light(devices[m], c, dur)
 
 
 # ---- Effects: the bulb itself runs LIFX "SetWaveform" (type 103), so no cloud and no flicker from network lag ----
@@ -558,22 +558,102 @@ def next_fire(s):
     return None
 
 
-def run_action(s):
-    a = s.get('action', {})
+def eff_fade(a):
+    """The fade for an action: its own 'fade' (seconds) when set, otherwise the default from Settings."""
+    f = clamp_secs(a.get('fade'), 7200) if a.get('fade') not in (None, '') else None
+    return (clamp_secs(db['settings']['transition'], 7200) or 0.0) if f is None else f
+
+
+def do_action(a):
+    """Run one action now. Returns (seconds until the action is complete, the lights it acts on)."""
     tgt, kind = a.get('target', 'all'), a.get('type')
     g = next((g for g in db['groups'] if g['id'] == tgt), None)
     with lock:
-        macs = list(devices) if tgt == 'all' else (g['members'] if g else [])
+        macs = list(devices) if tgt == 'all' else (list(g['members']) if g else [])
+    fade = eff_fade(a)
     if kind in ('on', 'off'):
-        apply(macs, {'power': kind == 'on'})
-    elif kind in EFFECTS:
-        run_effect(macs, kind, a.get('color'), a.get('times'), a.get('seconds'))
-    elif kind == 'preset' and g:
+        apply(macs, {'power': kind == 'on', 'transition': fade})
+        return fade, macs
+    if kind in EFFECTS:  # match the duration actually sent to the lights
+        if kind in ('strobe', 'flicker'):
+            limit = 60 if kind == 'strobe' else CONTINUOUS_SECONDS
+            secs = max(1.0, clamp_secs(a.get('seconds'), limit) or (30 if kind == 'strobe' else limit))
+            run_effect(macs, kind, a.get('color'), seconds=secs)
+        else:
+            times = max(1.0, clamp_secs(a.get('times'), 1000) or 1.0)
+            secs = times * WAVES[kind][1] / 1000
+            run_effect(macs, kind, a.get('color'), times=times)
+        return secs, macs
+    if kind == 'preset' and g:
         p = next((p for p in g.get('presets', []) if p['id'] == a.get('preset')), None)
         for mac, c in (p['lights'].items() if p else []):
             if mac in g['members']:
-                apply([mac], {'h': c['h'], 's': c['s'], 'b': c['b'], 'k': c['k'], 'power': c['on']})
-    print(f"[schedule] ran '{s.get('name')}': {kind} {tgt}")
+                apply([mac], {'h': c['h'], 's': c['s'], 'b': c['b'], 'k': c['k'], 'power': c['on'], 'transition': fade})
+        return fade, macs
+    return 0.0, macs
+
+
+# A routine is a schedule's first action plus optional steps. Each step waits "delay" seconds AFTER the previous
+# step has completed (its fade or effect finished), then runs its own action. Runs live only in memory.
+running = {}  # schedule id -> {'step', 'of', 'stop' (Event), 'macs', 'kind'}
+run_lock = threading.Lock()
+
+
+def start_routine(s):
+    """Start a schedule/routine in its own thread. False if it is already running."""
+    sid = s['id']
+    steps = [{'delay': 0, 'action': s.get('action') or {}}] + [x for x in (s.get('steps') or []) if isinstance(x, dict)]
+    r = {'step': 1, 'of': len(steps), 'stop': threading.Event(), 'macs': [], 'kind': None}
+    with run_lock:
+        if sid in running:
+            return False
+        running[sid] = r
+    threading.Thread(target=_routine_thread, args=(s.get('name'), sid, steps, r), daemon=True).start()
+    return True
+
+
+def _routine_thread(name, sid, steps, r):
+    try:
+        for i, st in enumerate(steps):
+            if i and r['stop'].wait(clamp_secs(st.get('delay'), 86400) or 0):
+                break
+            if r['stop'].is_set():
+                break
+            r['step'] = i + 1
+            a = st.get('action') or {}
+            secs, macs = do_action(a)
+            r['macs'], r['kind'] = macs, a.get('type')
+            print(f"[schedule] '{name}' step {i + 1}/{len(steps)}: {a.get('type')} {a.get('target', 'all')}")
+            if r['stop'].is_set():  # stopped while this step was starting
+                if r['kind'] in EFFECTS:
+                    stop_effect(macs)
+                break
+            if r['stop'].wait(secs):
+                break
+    except Exception as e:
+        print('routine error:', repr(e))
+    finally:
+        with run_lock:
+            running.pop(sid, None)
+
+
+def stop_routine(sid):
+    """Stop where it is: remaining steps never run and any effect it started ends. A fade in progress finishes by itself."""
+    with run_lock:
+        r = running.get(sid)
+    if not r:
+        return False
+    r['stop'].set()
+    if r['kind'] in EFFECTS:
+        stop_effect(r['macs'])
+    print(f'[schedule] stopped {sid} at step {r["step"]}/{r["of"]}')
+    return True
+
+
+def running_view(sid):
+    with run_lock:
+        r = running.get(sid)
+        return {'step': r['step'], 'of': r['of']} if r else None
 
 
 def schedule_loop():
@@ -588,9 +668,9 @@ def schedule_loop():
                 ft = fire_time(s, now.date())
                 if ft and ft <= now < ft + dt.timedelta(minutes=5):  # missed runs older than 5 min are skipped
                     fired[s['id']] = now.date()
-                    run_action(s)
-                    s['runs'] = s.get('runs', 0) + 1
-                    save()
+                    if start_routine(s):
+                        s['runs'] = s.get('runs', 0) + 1
+                        save()
         except Exception as e:
             print('schedule error:', repr(e))
         time.sleep(15)
@@ -782,8 +862,11 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/api/state':
             with lock:
                 lights = [view(d) for d in devices.values()]
+            now = dt.datetime.now().astimezone()
             return self.send_json({'lights': lights, 'groups': db['groups'], 'settings': db['settings'],
-                                   'schedules': [dict(s, next=next_fire(s)) for s in db['schedules']],
+                                   'schedules': [dict(s, next=next_fire(s), running=running_view(s['id'])) for s in db['schedules']],
+                                   'server_time': {'epoch': time.time(), 'utc_offset': int(now.utcoffset().total_seconds()),
+                                                   'hms': now.strftime('%H:%M:%S')},
                                    'rooms': db['rooms'], 'scenes': db['scenes'], 'favorites': db['favorites'],
                                    'patterns': db['patterns'],
                                    'sun': sun_today(), 'version': VERSION,
@@ -825,19 +908,30 @@ class Handler(BaseHTTPRequestHandler):
                 macs = list(devices) if tgt == 'all' else list(g['members']) if g else [tgt]
             run_effect(macs, kind, b.get('color'), b.get('times'), b.get('seconds'))
             return self.send_json({'ok': True})
-        if len(parts) == 4 and parts[1] == 'schedule' and parts[3] == 'run':
+        if len(parts) == 4 and parts[1] == 'schedule' and parts[3] in ('run', 'stop') and method == 'POST':
             s = next((s for s in db['schedules'] if s['id'] == parts[2]), None)
-            if s:
-                run_action(s)
-                s['manual_runs'] = s.get('manual_runs', 0) + 1
-                save()
-            return self.send_json({'ok': bool(s)})
+            if not s:
+                return self.send_json({'ok': False, 'error': 'unknown schedule'}, 404)
+            if parts[3] == 'stop':
+                return self.send_json({'ok': stop_routine(s['id'])})
+            if not start_routine(s):
+                return self.send_json({'ok': False, 'error': 'already running'}, 409)
+            s['manual_runs'] = s.get('manual_runs', 0) + 1
+            save()
+            return self.send_json({'ok': True})
         if path == '/api/schedules' and method == 'PUT':
             lst = b.get('schedules')
             old = {o['id']: o for o in db['schedules']}
-            db['schedules'] = [s for s in lst if isinstance(s, dict) and 'id' in s] if isinstance(lst, list) else []
+            db['schedules'] = [s for s in lst if isinstance(s, dict) and isinstance(s.get('id'), str)] if isinstance(lst, list) else []
+            for removed in old.keys() - {s['id'] for s in db['schedules']}:
+                stop_routine(removed)
             for s in db['schedules']:
                 s.pop('next', None)
+                s.pop('running', None)
+                if 'steps' in s:
+                    steps = s['steps'] if isinstance(s['steps'], list) else []
+                    s['steps'] = [dict(x, delay=clamp_secs(x.get('delay'), 86400) or 0.0)
+                                  for x in steps if isinstance(x, dict) and isinstance(x.get('action'), dict)]
                 o = old.get(s['id'], {})  # counters belong to the server; a stale page can't overwrite them
                 s['runs'] = o.get('runs', 0)
                 s['manual_runs'] = o.get('manual_runs', 0)

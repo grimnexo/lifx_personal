@@ -23,7 +23,9 @@ Current build: **1.1.0** (see `VERSION` at the top of `hl_lifx_control.py`). The
 | `lifx.db` | SQLite database created on first start: settings, groups, rooms, scenes, favorites, schedules, user accounts (passwords and PINs stored as salted hashes) and login sessions (stored as hashes). Back it up while the service is stopped; don't share it |
 | `lifx_db.py` | Storage module used by `hl_lifx_control.py` |
 
-On first start, an existing `config.json` (or older `data.json`) is imported into `lifx.db` once. The JSON file is left in place and is no longer read after that.
+On first start (including installer account bootstrap), an existing upstream 2.x `.config/` directory or older `config.json`/`data.json` is imported into an empty `lifx.db`. Keep these files in the same data directory as the database, before running the installer. Source files are retained. An existing SQLite database is never overwritten. Back up the original configuration and database before switching versions. SQLite remains the authoritative store for settings, accounts and routines.
+
+**Prerequisite:** lights must already be connected to the LAN using the LIFX app or another setup method. This controller does not provision bulbs onto Wi-Fi.
 
 ## Installer and service management
 
@@ -56,9 +58,9 @@ The web app has a sign-in page, a navigation bar, and these pages: Lights (the d
 
 ## Accounts and sign-in
 
-The first run creates a development account with username `test` and password `test`. Change the password under Profile before exposing the service to anyone else. Each user can sign in with their password or, once set, a 4 to 8 digit PIN. Five failed attempts lock that username for one minute.
+Use `./manage.sh install` to create the initial administrator account with a password you choose. There is no automatic development account. Each user can sign in with their password or, once set, a 4 to 8 digit PIN. Five failed attempts lock that username for one minute.
 
-Sessions are kept in memory, so restarting the service signs everyone out. This is a simple local login, not a full authentication system. Only use it on your own network.
+Sessions are stored as token hashes in SQLite and survive service restarts until expiration or logout. This is a simple local login, not a full authentication system. Only use it on your own network.
 
 The machine must be on the same network (same subnet or VLAN) as the lights. Allow inbound UDP through the firewall (the lights reply to the service's UDP socket). Docker or WSL need host/bridged networking for broadcast discovery to work.
 
@@ -219,7 +221,7 @@ Effects run **on the bulb itself** using LIFX's `SetWaveform` message (type 103)
 
 ## Schedules
 
-Schedules live in `config.json` and are run by `schedule_loop()`, so they fire whether or not a browser is open (the service itself must be running).
+Schedules live in SQLite and are run by `schedule_loop()`, so they fire whether or not a browser is open (the service itself must be running). Optional `action.fade` (seconds, 0–7200) overrides the default fade for on/off/preset actions. Optional `steps` contains objects with `delay` (seconds after the preceding action completes, 0–86400) and `action`. Each run executes sequentially in a background thread; `POST /api/schedule/<id>/stop` stops remaining steps. An active fade completes naturally. The API exposes runtime-only `running: {step, of}` or null and a `server_time` object with epoch and UTC offset. Duplicate starts return HTTP 409.
 
 | Field | Values |
 |---|---|

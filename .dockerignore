@@ -9,3 +9,8 @@ web/dist
 web/.vite
 __pycache__
 *.pyc
+
+.config/
+config.json.migrated-v1
+data.json.migrated-v1
+*.corrupt-*

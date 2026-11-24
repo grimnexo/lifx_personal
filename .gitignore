@@ -14,3 +14,9 @@ __pycache__/
 
 # Installer state, process logs, and database backups
 .lifx/
+
+# Upstream 2.x configuration and migration backups (may contain private settings)
+.config/
+config.json.migrated-v1
+data.json.migrated-v1
+*.corrupt-*

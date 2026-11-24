@@ -3,14 +3,13 @@
 import argparse
 import getpass
 import hashlib
-import json
 from pathlib import Path
 import re
 import secrets
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from lifx_db import Store
+from lifx_db import Store, import_legacy_if_empty
 
 ROUNDS = 200_000
 
@@ -43,19 +42,10 @@ def main():
     if not args.db.parent.is_dir():
         parser.error('Database directory does not exist')
     store = Store(str(args.db))
-    if not store.has_app_data() and store.user_count() == 0:
-        for legacy in (args.db.parent / 'config.json', args.db.parent / 'data.json'):
-            if legacy.is_file():
-                try:
-                    with legacy.open(encoding='utf-8') as source:
-                        data = json.load(source)
-                    if not isinstance(data, dict):
-                        raise ValueError('Expected a JSON object')
-                except (OSError, ValueError) as exc:
-                    raise SystemExit('Cannot import %s: %s' % (legacy, exc))
-                store.import_legacy(data)
-                print('Imported existing configuration from %s.' % legacy.name)
-                break
+    try:
+        import_legacy_if_empty(store, args.db.parent)
+    except (OSError, ValueError) as exc:
+        raise SystemExit('Cannot import existing configuration: %s' % exc)
     if args.reset:
         if not store.user_count():
             raise SystemExit('No users exist yet; use install to create one.')
