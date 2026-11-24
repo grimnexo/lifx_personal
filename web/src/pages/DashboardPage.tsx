@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useApp } from '../context';
 import { FavoritesBar } from '../components/FavoritesBar';
+import { ServerClock } from '../components/ServerClock';
 import { StatusAlerts } from '../components/StatusAlerts';
 import { Badge, PageTitle, btnPrimary, btnDanger, btnSmall, card } from '../components/ui';
 
@@ -27,6 +28,7 @@ export function DashboardPage() {
   return (
     <>
       <PageTitle title="Dashboard" subtitle={subtitle}>
+        <ServerClock />
         <Badge tone={live ? 'ok' : 'warn'}>{live ? 'Live' : 'Reconnecting'}</Badge>
         <div className="grid gap-2">
           <div className="flex gap-2">
