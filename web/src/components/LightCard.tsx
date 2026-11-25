@@ -5,7 +5,7 @@ import { hueSat, lightHex, lightStatus } from '../color';
 import { FX, STROBE_WARN } from '../constants';
 import type { FxKind, Light } from '../types';
 import { card, input, kelvin, labelRow, lnk, seg, stLine, Switch, titleBtn } from './ui';
-import { FxOptionsFields, fxOptions, noFxSettings } from './FxOptionsFields';
+import { FxOptionsFields, fxOptions, noFxSettings, strobeSeconds } from './FxOptionsFields';
 import type { FxSettings } from './FxOptionsFields';
 
 export function LightCard({ light: l }: { light: Light }) {
@@ -22,7 +22,7 @@ export function LightCard({ light: l }: { light: Light }) {
   const setFx = (k: FxKind, on: boolean) => {
     if (!on) return stopEffect(l.mac, [l.mac]);
     const go = () => startEffect(l.mac, [l.mac], k, fxOptions(k, fxSettings));
-    if (k === 'strobe') ask(`${STROBE_WARN} It stops by itself after 30 seconds.`, 'Yes, start strobe', go);
+    if (k === 'strobe') ask(`${STROBE_WARN} It stops by itself after ${strobeSeconds(fxSettings)} seconds.`, 'Yes, start strobe', go);
     else go();
   };
 

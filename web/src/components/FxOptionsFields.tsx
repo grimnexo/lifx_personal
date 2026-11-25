@@ -23,6 +23,12 @@ export function fxOptions(kind: FxKind, v: FxSettings): FxOptions {
   return o;
 }
 
+export const STROBE_DEFAULT_SECONDS = 30;
+
+export function strobeSeconds(v: FxSettings): number {
+  return fxOptions('strobe', v).seconds ?? STROBE_DEFAULT_SECONDS;
+}
+
 export function FxOptionsFields({ value, onChange }: { value: FxSettings; onChange: (v: FxSettings) => void }) {
   return (
     <div className="grid gap-2">

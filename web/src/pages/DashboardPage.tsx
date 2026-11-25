@@ -13,9 +13,11 @@ export function DashboardPage() {
   const onCount = lights.filter((l) => l.on && l.online).length;
   const onlineCount = lights.filter((l) => l.online).length;
   const percentOn = onlineCount ? Math.round((onCount / onlineCount) * 100) : 0;
-  const statusText = lights.length
-    ? `${onCount} of ${lights.length} on`
-    : connError
+  const statusText = onlineCount
+    ? `${onCount} of ${onlineCount} online on`
+    : lights.length
+      ? 'All lights offline'
+      : connError
       ? 'Not connected'
       : 'Looking for lights\u2026';
   const sunText =
@@ -52,7 +54,7 @@ export function DashboardPage() {
           </h2>
           <p className="m-0 flex items-baseline gap-2 font-bold leading-none tabular-nums">
             <span className="text-[2.4rem]">{onCount}</span>
-            <span className="text-[1.05rem] font-medium text-mut">of {lights.length}</span>
+            <span className="text-[1.05rem] font-medium text-mut">of {onlineCount} online</span>
           </p>
           <div
             role="progressbar"

@@ -5,7 +5,7 @@ import { FX, STROBE_WARN, plural } from '../constants';
 import type { FxKind, Group } from '../types';
 import { btn, btnSmall, card, input, kelvin, labelRow, stLine, Switch, titleBtn } from './ui';
 import { PresetPanel } from './PresetPanel';
-import { FxOptionsFields, fxOptions, noFxSettings } from './FxOptionsFields';
+import { FxOptionsFields, fxOptions, noFxSettings, strobeSeconds } from './FxOptionsFields';
 import type { FxSettings } from './FxOptionsFields';
 
 type Panel = 'presets' | 'set' | 'fun' | null;
@@ -164,7 +164,7 @@ function FunPanel({ g }: { g: Group }) {
   const setFx = (k: FxKind, on: boolean) => {
     if (!on) return stopEffect(g.id, g.members);
     const go = () => startEffect(g.id, g.members, k, fxOptions(k, fxSettings));
-    if (k === 'strobe') ask(`${STROBE_WARN} It stops by itself after 30 seconds.`, 'Yes, start strobe', go);
+    if (k === 'strobe') ask(`${STROBE_WARN} It stops by itself after ${strobeSeconds(fxSettings)} seconds.`, 'Yes, start strobe', go);
     else go();
   };
 
