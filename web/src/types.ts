@@ -1,4 +1,9 @@
 export type FxKind = 'breathe' | 'pulse' | 'strobe' | 'flicker';
+export interface FxOptions {
+  color?: { h: number; s: number; b: number };
+  times?: number;
+  seconds?: number;
+}
 export type ActionType = 'on' | 'off' | 'preset' | FxKind;
 export type SectionKey = 'groups' | 'lights' | 'schedules';
 

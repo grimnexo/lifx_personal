@@ -3,14 +3,18 @@ import { useApp } from '../context';
 import { groupColor, hueSat, lightHex } from '../color';
 import { FX, STROBE_WARN, plural } from '../constants';
 import type { FxKind, Group } from '../types';
-import { btn, btnSmall, card, kelvin, labelRow, stLine, Switch, titleBtn } from './ui';
+import { btn, btnSmall, card, input, kelvin, labelRow, stLine, Switch, titleBtn } from './ui';
 import { PresetPanel } from './PresetPanel';
+import { FxOptionsFields, fxOptions, noFxSettings, strobeSeconds } from './FxOptionsFields';
+import type { FxSettings } from './FxOptionsFields';
 
 type Panel = 'presets' | 'set' | 'fun' | null;
 
 export function GroupCard({ g }: { g: Group }) {
   const { lights, isOpen, toggleOpen, setGroupLights, powerGroup } = useApp();
   const [panel, setPanel] = useState<Panel>(null);
+  const [fade, setFade] = useState('');
+  const fadeSeconds = fade.trim() === '' ? undefined : Math.min(7200, Math.max(0, Number(fade)));
   const ms = lights.filter((l) => g.members.includes(l.mac));
   const gc = groupColor(g.members, lights);
   const open = isOpen('g:' + g.id);
@@ -37,10 +41,10 @@ export function GroupCard({ g }: { g: Group }) {
           <p className={stLine}>{plural(ms.length)}</p>
         </div>
         <div className="flex gap-2">
-          <button className={btn} onClick={() => powerGroup(g, true)}>
+          <button className={btn} onClick={() => powerGroup(g, true, fadeSeconds)}>
             On
           </button>
-          <button className={btn} onClick={() => powerGroup(g, false)}>
+          <button className={btn} onClick={() => powerGroup(g, false, fadeSeconds)}>
             Off
           </button>
         </div>
@@ -48,6 +52,18 @@ export function GroupCard({ g }: { g: Group }) {
 
       {open && (
         <>
+          <label className={labelRow}>
+            Fade for on and off (seconds, blank uses Settings)
+            <input
+              type="number"
+              min={0}
+              max={7200}
+              step={0.1}
+              className={input}
+              value={fade}
+              onChange={(e) => setFade(e.target.value)}
+            />
+          </label>
           <label className={labelRow}>Brightness</label>
           <input
             type="range"
@@ -143,11 +159,12 @@ function SetAllPanel({ g }: { g: Group }) {
 function FunPanel({ g }: { g: Group }) {
   const { lights, startEffect, stopEffect, ask } = useApp();
   const active = lights.find((l) => g.members.includes(l.mac) && l.fx)?.fx ?? null;
+  const [fxSettings, setFxSettings] = useState<FxSettings>(noFxSettings);
 
   const setFx = (k: FxKind, on: boolean) => {
     if (!on) return stopEffect(g.id, g.members);
-    const go = () => startEffect(g.id, g.members, k);
-    if (k === 'strobe') ask(`${STROBE_WARN} It stops by itself after 30 seconds.`, 'Yes, start strobe', go);
+    const go = () => startEffect(g.id, g.members, k, fxOptions(k, fxSettings));
+    if (k === 'strobe') ask(`${STROBE_WARN} It stops by itself after ${strobeSeconds(fxSettings)} seconds.`, 'Yes, start strobe', go);
     else go();
   };
 
@@ -162,8 +179,9 @@ function FunPanel({ g }: { g: Group }) {
         ))}
       </div>
       <small className="text-mut">
-        Only lights that are on are affected, using each light&rsquo;s current color. Switch it off to restore the lights.
+        Only lights that are on are affected, using each light&rsquo;s current color unless you choose one below. Switch it off to restore the lights.
       </small>
+      <FxOptionsFields value={fxSettings} onChange={setFxSettings} />
     </div>
   );
 }
